@@ -20,16 +20,16 @@ Cartesian dynamics with gravity only (point mass gravity).
 # Returns
 - `xdot`: 6-vector derivative [rdot; vdot]
 """
-function cartesian_gravity_dynamics(x, t, GM=SD.GM_EARTH)
-    r = x[1:3]
-    v = x[4:6]
+function cartesian_gravity_dynamics(x_vec, t, GM=SD.GM_EARTH)
+    r_vec = x_vec[1:3]
+    v_vec = x_vec[4:6]
     
-    rmag = norm(r)
+    r_vec_norm = norm(r_vec)
     
-    rdot = v
-    vdot = -(GM / rmag^3) * r
+    r_vec_dot = v_vec
+    v_vec_dot = -(GM / r_vec_norm^3) * r_vec
     
-    return [rdot; vdot]
+    return [r_vec_dot; v_vec_dot]
 end
 
 """
