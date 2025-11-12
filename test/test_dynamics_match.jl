@@ -127,13 +127,20 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
 
     # Propagate in Cartesian coordinates
     println("\nPropagating in Cartesian coordinates...")
-    x_vec_traj = propagate_cartesian_keplerian_orbit(x_vec_0, times, SIM_PARAMS, GM)
+    x_vec_traj, t_traj_cart = propagate_cartesian_keplerian_orbit(x_vec_0, times, SIM_PARAMS, GM)
     println("  Completed: ", length(x_vec_traj), " states")
 
     # Propagate in KS coordinates
     println("Propagating in KS coordinates...")
-    x_vec_traj_ks, ks_state_augmented_traj = propagate_ks_keplerian_orbit(ks_state_augmented_0, times, SIM_PARAMS, GM)
+    x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_keplerian_orbit(ks_state_augmented_0, times, SIM_PARAMS, GM)
     println("  Completed: ", length(ks_state_augmented_traj), " states")
+
+    # Compare the time histories from Cartesian and KS propagations
+    time_diffs = [t_traj_cart[i] - t_traj_ks[i] for i in 1:min(length(t_traj_cart), length(t_traj_ks))]
+    max_time_diff = maximum(abs.(time_diffs))
+    println("\nTime comparison between Cartesian and KS propagations:")
+    println("  Maximum absolute time difference: ", max_time_diff, " s")
+    println("  Element-wise time differences (first 10): ", time_diffs[1:min(10, end)])
 
     # Compare trajectories
     max_pos_error = 0.0

@@ -66,5 +66,6 @@ function propagate_cartesian_keplerian_orbit(x_vec_0, times, sim_params, GM=SD.G
     prob = ODEProblem(cartesian_gravity!, x_vec_0, (times[1], times[end]), GM)
     sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, saveat=times)
     x_vec_traj = [sol.u[k] for k = 1:length(sol.u)]
-    return x_vec_traj
+    t_traj = [sol.t[k] for k = 1:length(sol.t)]
+    return x_vec_traj, t_traj
 end
