@@ -5,160 +5,140 @@ Cartesian and KS coordinates.
 
 using LinearAlgebra
 
-""" `position_inertial_to_ks(x)`
-Given a 3-vector `x`, corresponding to an inertial position,
-return the ks-transformed 4-vector `p`.
+""" `L(y_vec)`
+Given a 4-vector `y_vec`, corresponding to a KS position,
+return the Left multiply Matrix L(y_vec) where col(r_vec,0) = L(y_vec)y_vec.
 """
-function position_inertial_to_ks(x)
-    x1, _, _ = x
-    r = sqrt(x'x)
+function L(y_vec)
+    y1, y2, y3, y4 = y_vec
 
-    if x1 >= 0
-        return position_cart_to_ks_plus(x)
+    return [y1 -y2 -y3 y4
+            y2 y1 -y4 -y3
+            y3 y4 y1 y2
+            y4 -y3 y2 -y1]
+end
+
+""" `position_cartesian_to_ks(r_vec)`
+Given a 3-vector `r_vec`, corresponding to an cartesian position,
+return the ks-transformed 4-vector `y_vec`.
+"""
+# This approach might break
+# function position_cartesian_to_ks(r_vec)
+#     r1, r2, r3 = r_vec
+#     r_norm = sqrt(r_vec'r_vec)
+
+#     y1 = 0.0
+#     y4 = sqrt(0.5 * (r_norm + r1) - y1^2)
+#     y2 = (r2 * y4 + r3 * y1) / (r_norm + r1)
+#     y3 = (r3 * y1 - r2 * y4) / (r_norm + r1)
+#     return [y1, y2, y3, y4]
+# end
+function position_cartesian_to_ks(r_vec)
+    r1, r2, r3 = r_vec
+    r_vec_norm = norm(r_vec)
+
+    if r1 >= 0
+        # Transform best suited for vectors with r1 >= 0
+        y4 = 0.0
+        y1 = sqrt(0.5 * (r_vec_norm + r1) - y4^2)
+        y2 = (r2 * y1 + r3 * y4) / (r1 + r_vec_norm)
+        y3 = (r3 * y1 - r2 * y4) / (r1 + r_vec_norm)
+        return [y1, y2, y3, y4]
     else
-        return position_cart_to_ks_minus(x)
+        # Transform best suited for vectors with r1 < 0
+        y3 = 0.0
+        y2 = sqrt(0.5 * (r_vec_norm - r1) - y3^2)
+        y1 = (r2 * y2 + r3 * y3) / (r_vec_norm - r1)
+        y4 = (r3 * y2 - r2 * y3) / (r_vec_norm - r1)
+        return [y1, y2, y3, y4]
     end
 end
 
-""" position_cart_to_ks_plus
-Convert a vector to ks, uses the transform best suited for vectors with x1 > 0
+""" `position_ks_to_cartesian(y_vec)`
+Given a 4-vector `y_vec`, corresponding to a KS position,
+return the cartesian 3-vector `r_vec`.
 """
-function position_cart_to_ks_plus(x)
-    x1, x2, x3 = x
-    r = sqrt(x'x)
+# function position_ks_to_cartesian(y_vec)
+#     y1, y2, y3, y4 = y_vec
 
-    p4 = 0.0
-    p1 = sqrt(0.5 * (r + x1) - p4^2)
-    p2 = (x2 * p1 + x3 * p4) / (x1 + r)
-    p3 = (x3 * p1 - x2 * p4) / (x1 + r)
-    return [p1, p2, p3, p4]
+#     r1 = y1^2 - y2^2 - y3^2 + y4^2
+#     r2 = 2.0 * (y1 * y2 - y3 * y4)
+#     r3 = 2.0 * (y1 * y3 + y2 * y4)
+
+#     return [r1, r2, r3]
+# end
+function position_ks_to_cartesian(y_vec)
+    return (L(y_vec) * y_vec)[1:3]
 end
 
-""" position_cart_to_ks_minus
-Convert a vector to ks, uses the transform best suited for vectors with x1 < 0
-"""
-function position_cart_to_ks_minus(x)
-    x1, x2, x3 = x
-    r = sqrt(x'x)
-
-    p3 = 0.0
-    p2 = sqrt(0.5 * (r - x1) - p3^2)
-    p1 = (x2 * p2 + x3 * p3) / (r - x1)
-    p4 = (x3 * p2 - x2 * p3) / (r - x1)
-    return [p1, p2, p3, p4]
-end
-
-""" `position_ks_to_inertial()`
-Given a 4-vector `p`, corresponding to a KS position,
-return the inertial 3-vector `x`.
-"""
-function position_ks_to_inertial(p)
-    p1 = p[1]
-    p2 = p[2]
-    p3 = p[3]
-    p4 = p[4]
-
-    x1 = p1^2 - p2^2 - p3^2 + p4^2
-    x2 = 2.0 * (p1 * p2 - p3 * p4)
-    x3 = 2.0 * (p1 * p3 + p2 * p4)
-
-    return [x1, x2, x3]
-end
-
-""" `velocity_inertial_to_ks(p, x_dot)`
-Given a 4-vector `p`, corresponding to the ks position, and a
-3-vector `x_dot`, corresponding to inertial velocities, 
-return the 4-vector of ks-transformed velocities `p_prime`.
-The inertial velocities are wrt real time (t), whereas the ks-transformed velocities
+""" `velocity_cartesian_to_ks(y_vec, v_vec)`
+Given a 4-vector `y_vec`, corresponding to the ks position, and a
+3-vector `v_vec`, corresponding to cartesian velocities, 
+return the 4-vector of ks-transformed velocities `y_vec_prime`.
+The cartesian velocities are wrt time (t), whereas the ks-transformed velocities
 are wrt fictitious time (s), where dt = ||x||ds.
 """
-function velocity_inertial_to_ks(p, x_dot)
-    p1 = p[1]
-    p2 = p[2]
-    p3 = p[3]
-    p4 = p[4]
+function velocity_cartesian_to_ks(y_vec, v_vec)
+    y1, y2, y3, y4 = y_vec
+    v1, v2, v3 = v_vec
 
-    x1_dot = x_dot[1]
-    x2_dot = x_dot[2]
-    x3_dot = x_dot[3]
+    y1_prime = 0.5 * (y1 * v1 + y2 * v2 + y3 * v3)
+    y2_prime = 0.5 * (-y2 * v1 + y1 * v2 + y4 * v3)
+    y3_prime = 0.5 * (-y3 * v1 - y4 * v2 + y1 * v3)
+    y4_prime = 0.5 * (y4 * v1 - y3 * v2 + y2 * v3)
 
-    p1_prime = 0.5 * (p1 * x1_dot + p2 * x2_dot + p3 * x3_dot)
-    p2_prime = 0.5 * (-p2 * x1_dot + p1 * x2_dot + p4 * x3_dot)
-    p3_prime = 0.5 * (-p3 * x1_dot - p4 * x2_dot + p1 * x3_dot)
-    p4_prime = 0.5 * (p4 * x1_dot - p3 * x2_dot + p2 * x3_dot)
-
-    return [p1_prime, p2_prime, p3_prime, p4_prime]
+    return [y1_prime, y2_prime, y3_prime, y4_prime]
 end
 
-""" `velocity_ks_to_inertial(p, p_prime)`
-Given 4-vectors `p` and `p_prime`, corresponding to the ks transformed
-position and velocity, respectively, return the 3-vector inertial velocity `x`.
+""" `velocity_ks_to_cartesian(y_vec, y_vec_prime)`
+Given 4-vectors `y_vec` and `y_vec_prime`, corresponding to the ks transformed
+position and velocity, respectively, return the 3-vector cartesian velocity `x`.
 """
-function velocity_ks_to_inertial(p, p_prime)
-    p1 = p[1]
-    p2 = p[2]
-    p3 = p[3]
-    p4 = p[4]
+# function velocity_ks_to_cartesian(y_vec, y_vec_prime)
+#     y1, y2, y3, y4 = y_vec
+#     y1_prime, y2_prime, y3_prime, y4_prime = y_vec_prime
+#     yTy = y'y
 
-    p1_prime = p_prime[1]
-    p2_prime = p_prime[2]
-    p3_prime = p_prime[3]
-    p4_prime = p_prime[4]
+#     v1 = (2.0 / yTy) * (y1 * y1_prime - y2 * y2_prime - y3 * y3_prime + y4 * y4_prime)
+#     v2 = (2.0 / yTy) * (y2 * y1_prime + y1 * y2_prime - y4 * y3_prime - y3 * y4_prime)
+#     v3 = (2.0 / yTy) * (y3 * y1_prime + y4 * y2_prime + y1 * y3_prime + y2 * y4_prime)
 
-    pTp = p'p
-
-    x1_dot = (2.0 / pTp) * (p1 * p1_prime - p2 * p2_prime - p3 * p3_prime + p4 * p4_prime)
-    x2_dot = (2.0 / pTp) * (p2 * p1_prime + p1 * p2_prime - p4 * p3_prime - p3 * p4_prime)
-    x3_dot = (2.0 / pTp) * (p3 * p1_prime + p4 * p2_prime + p1 * p3_prime + p2 * p4_prime)
-
-    return [x1_dot, x2_dot, x3_dot]
+#     return [v1, v2, v3]
+# end
+function velocity_ks_to_cartesian(y_vec, y_vec_prime)
+    return ((2.0 / y_vec'y_vec) * (L(y_vec) * y_vec_prime))[1:3]
 end
 
-""" `state_ks_to_inertial(p_state)`
-Given an 8-vector `p_state = [p, p_prime]` compute the 6-vector cartesian state `x_state = [x, x_dot]`.
+""" `state_ks_to_cartesian(ks_state)`
+Given an 8-vector `ks_state = [y_vec, y_vec_prime]` compute the 6-vector cartesian state `x_vec = [r_vec, v_vec]`.
 """
-function state_ks_to_inertial(p_state)
-    p = p_state[1:4]
-    p_prime = p_state[5:8]
+function state_ks_to_cartesian(ks_state)
+    y_vec = ks_state[1:4]
+    y_vec_prime = ks_state[5:8]
 
-    x = position_ks_to_inertial(p)
-    x_dot = velocity_ks_to_inertial(p, p_prime)
+    r_vec = position_ks_to_cartesian(y_vec)
+    v_vec = velocity_ks_to_cartesian(y_vec, y_vec_prime)
 
-    return [x; x_dot]
+    return [r_vec; v_vec]
 end
 
-""" `state_inertial_to_ks(x_state)`
-Given a 6-vector `x_state = [x, x_dot]` compute the 8-vector KS state `p_state = [p, p_prime]`
+""" `state_cartesian_to_ks(x_vec)`
+Given a 6-vector `x_vec = [r_vec, v_vec]` compute the 8-vector KS state `ks_state = [y_vec, y_vec_prime]`
 """
-function state_inertial_to_ks(x_state)
-    x = x_state[1:3]
-    x_dot = x_state[4:6]
+function state_cartesian_to_ks(x_vec)
+    r_vec = x_vec[1:3]
+    v_vec = x_vec[4:6]
 
-    p = position_inertial_to_ks(x)
-    p_prime = velocity_inertial_to_ks(p, x_dot)
+    y_vec = position_cartesian_to_ks(r_vec)
+    y_vec_prime = velocity_cartesian_to_ks(y_vec, v_vec)
 
-    return [p; p_prime]
+    return [y_vec; y_vec_prime]
 end
 
-""" `ks_L(p)`
-Given a ks quaternion `p`, compute the Left multiply Matrix L(p) where p*r = L(p)r
-"""
-function ks_L(p)
-    p1 = p[1]
-    p2 = p[2]
-    p3 = p[3]
-    p4 = p[4]
-
-    return [p1 -p2 -p3 p4
-        p2 p1 -p4 -p3
-        p3 p4 p1 p2
-        p4 -p3 p2 -p1]
-end
-
-""" `ks_h_energy(p, p_prime, GM)`
+""" `energy_ks(y_vec, y_vec_prime, GM)`
 Compute the KS energy parameter h from KS position and velocity.
 """
-function ks_h_energy(p, p_prime, GM)
-    return (GM - 2 * (p_prime'p_prime)) / (p'p)
+function energy_ks(y_vec, y_vec_prime, GM)
+    return (GM - 2 * (y_vec_prime'y_vec_prime)) / (y_vec'y_vec)
 end
 

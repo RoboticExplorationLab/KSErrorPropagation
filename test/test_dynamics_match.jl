@@ -81,10 +81,10 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     println("="^80)
 
     # Convert orbital elements to cartesian using SatelliteDynamics
-    osc_elements = [a, e, i, RAAN, omega, M]
-    x0_cart = SD.sOSCtoCART(osc_elements; GM=GM, use_degrees=false)
-    r0 = x0_cart[1:3]
-    v0 = x0_cart[4:6]
+    oe_vec = [a, e, i, RAAN, omega, M]
+    x_vec_0 = SD.sOSCtoCART(oe_vec; GM=GM, use_degrees=false)
+    r_vec_0 = x_vec_0[1:3]
+    v_vec_0 = x_vec_0[4:6]
 
     println("\nInitial conditions:")
     println("  Semi-major axis: ", a / 1e3, " km")
@@ -95,30 +95,30 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     println("  Mean anomaly: ", M * 180 / π, " deg")
     println("  Periapsis distance: ", a * (1 - e) / 1e3, " km")
     println("  Apoapsis distance: ", a * (1 + e) / 1e3, " km")
-    println("  Position: ", r0)
-    println("  Velocity: ", v0)
-    println("  Radius: ", norm(r0) / 1e3, " km")
-    println("  Speed: ", norm(v0) / 1e3, " km/s")
+    println("  Position: ", r_vec_0)
+    println("  Velocity: ", v_vec_0)
+    println("  Radius: ", norm(r_vec_0) / 1e3, " km")
+    println("  Speed: ", norm(v_vec_0) / 1e3, " km/s")
 
     # Convert to KS coordinates
-    p_state_0_ks = state_inertial_to_ks(x0_cart)
-    h0 = ks_h_energy(p_state_0_ks[1:4], p_state_0_ks[5:8], GM)
-    p_state_0_ks_full = [p_state_0_ks; h0]
+    ks_state_0 = state_cartesian_to_ks(x_vec_0)
+    h_0 = energy_ks(ks_state_0[1:4], ks_state_0[5:8], GM)
+    ks_state_augmented_0 = [ks_state_0; h_0]
 
     # Verify conversion
-    x0_ks_back = state_ks_to_inertial(p_state_0_ks)
-    conv_pos_error = norm(x0_ks_back[1:3] - r0)
-    conv_vel_error = norm(x0_ks_back[4:6] - v0)
+    x_vec_0_ks_back = state_ks_to_cartesian(ks_state_augmented_0[1:8])
+    conv_pos_error = norm(x_vec_0_ks_back[1:3] - r_vec_0)
+    conv_vel_error = norm(x_vec_0_ks_back[4:6] - v_vec_0)
     println("\nKS conversion verification:")
     println("  Position error: ", conv_pos_error, " m")
     println("  Velocity error: ", conv_vel_error, " m/s")
 
     # Propagation time: multiple orbital periods
     T_orbital = 2π * sqrt(a^3 / GM)
-    t0 = 0.0
+    t_0 = 0.0
     t_end = SIM_PARAMS.num_orbits * T_orbital
     dt = SIM_PARAMS.sampling_time
-    times = collect(t0:dt:t_end)
+    times = collect(t_0:dt:t_end)
 
     println("\nPropagation parameters:")
     println("  Orbital period: ", T_orbital, " s (", T_orbital / 3600, " hours)")
@@ -127,23 +127,13 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
 
     # Propagate in Cartesian coordinates
     println("\nPropagating in Cartesian coordinates...")
-    function cart_dynamics!(xdot, x, p, t)
-        cartesian_gravity_dynamics!(xdot, x, p, t)
-    end
-
-    prob_cart = ODEProblem(cart_dynamics!, x0_cart, (t0, t_end), GM)
-    sol_cart = solve(prob_cart, SIM_PARAMS.integrator();
-        abstol=SIM_PARAMS.abstol,
-        reltol=SIM_PARAMS.reltol,
-        saveat=times)
-
-    x_traj_cart = [sol_cart.u[k] for k = 1:length(sol_cart.u)]
-    println("  Completed: ", length(x_traj_cart), " states")
+    x_vec_traj = propagate_cartesian_keplerian_orbit(x_vec_0, times, SIM_PARAMS, GM)
+    println("  Completed: ", length(x_vec_traj), " states")
 
     # Propagate in KS coordinates
     println("Propagating in KS coordinates...")
-    x_traj_ks, p_state_traj_ks = propagate_ks_with_time(p_state_0_ks_full, t0, times, GM)
-    println("  Completed: ", length(x_traj_ks), " states")
+    x_vec_traj_ks, ks_state_augmented_traj = propagate_ks_keplerian_orbit(ks_state_augmented_0, times, SIM_PARAMS, GM)
+    println("  Completed: ", length(ks_state_augmented_traj), " states")
 
     # Compare trajectories
     max_pos_error = 0.0
@@ -151,9 +141,9 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     max_pos_error_idx = 1
     max_vel_error_idx = 1
 
-    for i in 1:min(length(x_traj_cart), length(x_traj_ks))
-        x_cart = x_traj_cart[i]
-        x_ks = x_traj_ks[i]
+    for i in 1:min(length(x_vec_traj), length(x_vec_traj_ks))
+        x_cart = x_vec_traj[i]
+        x_ks = x_vec_traj_ks[i]
 
         pos_error = norm(x_cart[1:3] - x_ks[1:3])
         vel_error = norm(x_cart[4:6] - x_ks[4:6])
@@ -173,26 +163,6 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     println("  Position error: ", max_pos_error, " m (at step ", max_pos_error_idx, ")")
     println("  Velocity error: ", max_vel_error, " m/s (at step ", max_vel_error_idx, ")")
 
-    # Check final state
-    x_final_cart = x_traj_cart[end]
-    x_final_ks = x_traj_ks[end]
-    final_pos_error = norm(x_final_cart[1:3] - x_final_ks[1:3])
-    final_vel_error = norm(x_final_cart[4:6] - x_final_ks[4:6])
-
-    println("\nFinal state comparison:")
-    println("  Position error: ", final_pos_error, " m")
-    println("  Velocity error: ", final_vel_error, " m/s")
-
-    # Energy conservation check
-    E0_cart = 0.5 * norm(v0)^2 - GM / norm(r0)
-    E_final_cart = 0.5 * norm(x_final_cart[4:6])^2 - GM / norm(x_final_cart[1:3])
-    energy_change = E_final_cart - E0_cart
-
-    println("\nEnergy conservation:")
-    println("  Initial energy: ", E0_cart, " J/kg")
-    println("  Final energy: ", E_final_cart, " J/kg")
-    println("  Energy change: ", energy_change, " J/kg")
-
     # Summary
     success = max_pos_error < SIM_PARAMS.max_pos_error_threshold &&
               max_vel_error < SIM_PARAMS.max_vel_error_threshold
@@ -204,9 +174,8 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     end
     println("-"^80)
 
-    return (success=success, max_pos_error=max_pos_error, max_vel_error=max_vel_error,
-        final_pos_error=final_pos_error, final_vel_error=final_vel_error,
-        energy_change=energy_change, x_traj_cart=x_traj_cart, x_traj_ks=x_traj_ks, times=times)
+    return (success=success, max_pos_error=max_pos_error, max_vel_error=max_vel_error, 
+        x_vec_traj=x_vec_traj, x_vec_traj_ks=x_vec_traj_ks, times=times)
 end
 
 # Run tests for all orbits
@@ -253,22 +222,22 @@ if eccentric_idx !== nothing
     println("\nGenerating plots for eccentric orbit (e=0.9)...")
 
     p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (s)", ylabel="Position (m)")
-    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_traj_cart],
+    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_vec_traj],
         label="Cartesian x", linewidth=2)
-    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_traj_ks],
+    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_vec_traj_ks],
         label="KS x", linestyle=:dash, linewidth=2)
-    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_traj_cart],
+    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_vec_traj],
         label="Cartesian y", linewidth=2)
-    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_traj_ks],
+    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_vec_traj_ks],
         label="KS y", linestyle=:dash, linewidth=2)
 
     p2 = plot(title="Position Error (e=0.9)", xlabel="Time (s)", ylabel="Error (m)")
-    pos_errors = [norm(orbit_result.x_traj_cart[i][1:3] - orbit_result.x_traj_ks[i][1:3])
+    pos_errors = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_ks[i][1:3])
                   for i = 1:length(orbit_result.times)]
     plot!(p2, orbit_result.times, pos_errors, label="Position error", linewidth=2)
 
     p3 = plot(title="Velocity Error (e=0.9)", xlabel="Time (s)", ylabel="Error (m/s)")
-    vel_errors = [norm(orbit_result.x_traj_cart[i][4:6] - orbit_result.x_traj_ks[i][4:6])
+    vel_errors = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_ks[i][4:6])
                   for i = 1:length(orbit_result.times)]
     plot!(p3, orbit_result.times, vel_errors, label="Velocity error", linewidth=2)
 

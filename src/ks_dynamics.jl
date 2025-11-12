@@ -11,120 +11,99 @@ const SD = SatelliteDynamics
 include("ks_transform.jl")
 
 """
-    ks_gravity_dynamics(p_state, s, GM)
+    ks_gravity(ks_state_augmented, s, GM)
 
 KS dynamics with gravity only (point mass gravity).
 
 # Arguments
-- `p_state`: 9-vector KS state [p; p_prime; h] where:
-  - `p`: 4-vector KS position
-  - `p_prime`: 4-vector KS velocity (wrt fictitious time s)
-  - `h`: energy parameter
+- `ks_state_augmented`: KS augmented state vector [y_vec; y_vec_prime; h]
 - `s`: fictitious time (not used but required for ODE interface)
 - `GM`: gravitational parameter (default: GM_EARTH)
 
 # Returns
-- `p_state_dot`: 9-vector derivative [p_prime; p_pprime; h_prime]
-
-The KS dynamics for gravity only are:
-- p' = p_prime (already in state)
-- p'' = (-h/2) * p
-- h' = 0
-
-where h = (GM - 2*(p_prime'p_prime)) / (p'p)
+- `ks_state_augmented_prime`: KS augmented state vector derivative [y_vec_prime; y_vec_pprime; h_prime]
 """
-function ks_gravity_dynamics(p_state, s, GM=SD.GM_EARTH)
-    p = p_state[1:4]
-    p_prime = p_state[5:8]
-    h = p_state[9]
+function ks_gravity(ks_state_augmented, s, GM=SD.GM_EARTH)
+    y_vec = ks_state_augmented[1:4]
+    y_vec_prime = ks_state_augmented[5:8]
+    h = ks_state_augmented[9]
     
     # Unperturbed KS dynamics (gravity only)
-    p_pprime = (-h / 2) * p
+    y_vec_pprime = (-h / 2.0) * y_vec
     h_prime = 0.0
     
-    return [p_prime; p_pprime; h_prime]
+    return [y_vec_prime; y_vec_pprime; h_prime]
 end
 
 """
-    ks_gravity_dynamics!(p_state_dot, p_state, p, s)
+    ks_gravity!(ks_state_augmented_prime, ks_state_augmented, p, s)
 
 In-place version for DifferentialEquations.jl.
 
 # Arguments
-- `p_state_dot`: output derivative vector
-- `p_state`: KS state vector [p; p_prime; h]
+- `ks_state_augmented_prime`: KS augmented state vector derivative [y_vec_prime; y_vec_pprime; h_prime]
+- `ks_state_augmented`: KS augmented state vector [y_vec; y_vec_prime; h]
 - `p`: parameters (GM)
 - `s`: fictitious time
 """
-function ks_gravity_dynamics!(p_state_dot, p_state, p, s)
+# function ks_gravity!(ks_state_augmented_prime, ks_state_augmented, p, s)
+#     GM = p isa Number ? p : p[1]
+#     ks_state_augmented_prime .= ks_gravity(ks_state_augmented, s, GM)
+# end
+function ks_gravity!(ks_state_full_prime, ks_state_full, p, s)
     GM = p isa Number ? p : p[1]
-    p_state_dot .= ks_gravity_dynamics(p_state, s, GM)
+    ks_state_augmented = ks_state_full[1:9]
+    
+    # KS dynamics
+    ks_state_augmented_prime = ks_gravity(ks_state_augmented, s, GM)
+    
+    # Time derivative: dt/ds = r = y'y
+    y_vec = ks_state_augmented[1:4]
+    r_vec_norm = y_vec'y_vec
+    t_prime = r_vec_norm
+    
+    ks_state_full_prime .= [ks_state_augmented_prime; t_prime]
 end
 
 """
-    propagate_ks_with_time(p_state_0, t0, times, GM)
+    propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM)
 
 Propagate KS state with time tracking, handling the transformation between
-real time t and fictitious time s where dt = r * ds and r = p'p.
+real time t and fictitious time s where dt = r * ds and r = y'y.
 
 # Arguments
-- `p_state_0`: initial KS state [p; p_prime; h]
-- `t0`: initial real time
-- `times`: array of real times to save at
+- `ks_state_augmented_0`: initial KS augmented state [y_vec; y_vec_prime; h]
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
 - `GM`: gravitational parameter
 
 # Returns
-- `x_traj`: array of Cartesian states [r; v] at each time
-- `p_state_traj`: array of KS states [p; p_prime; h] at each time
-
-The state vector includes time: z = [p; p_prime; h; t]
+- `x_vec_traj_ks`: array of Cartesian states [r_vec; v_vec] at each time
+- `ks_state_augmented_traj`: array of KS augmented states [y_vec; y_vec_prime; h] at each time
 """
-function propagate_ks_with_time(p_state_0, t0, times, GM=SD.GM_EARTH)
-    # Extended state: [p; p_prime; h; t] where t is real time
-    z0 = [p_state_0; t0]
+function propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM=SD.GM_EARTH)
+    ks_state_full_0 = [ks_state_augmented_0; times[1]] # KS full state vector: [y_vec; y_vec_prime; h; t]
+    y_vec_0 = ks_state_augmented_0[1:4]
+    r_vec_norm_0 = y_vec_0'y_vec_0
+    s_0 = 0.0
+    s_end = (times[end] - times[1]) / r_vec_norm_0  # Rough estimate: s_end ~ t_end / r_vec_norm_0
     
-    function ks_dynamics_with_time!(zdot, z, p, s)
-        p_state = z[1:9]
-        
-        # KS dynamics
-        p_state_dot = ks_gravity_dynamics(p_state, s, GM)
-        
-        # Time derivative: dt/ds = r = p'p
-        p_vec = p_state[1:4]
-        r = p_vec'p_vec
-        tdot = r
-        
-        zdot .= [p_state_dot; tdot]
-    end
-    
-    # Integrate in fictitious time s
-    # Estimate s_end based on approximate orbital period
-    p = p_state_0[1:4]
-    r_initial = p'p
-    # Rough estimate: s_end ~ t_end / r_initial
-    s0 = 0.0
-    s_end = (times[end] - t0) / r_initial * 2.0  # Add margin
-    
-    prob = ODEProblem(ks_dynamics_with_time!, z0, (s0, s_end), GM)
-    
-    # Integrate with dense output for interpolation
-    sol = solve(prob, Tsit5(); abstol=1e-12, reltol=1e-13, dense=true)
+    prob = ODEProblem(ks_gravity!, ks_state_full_0, (s_0, s_end), GM)
+    sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol)
     
     # Find states at desired times by interpolation
-    x_traj = Vector{Vector{Float64}}()
-    p_state_traj = Vector{Vector{Float64}}()
+    x_vec_traj_ks = Vector{Vector{Float64}}()
+    ks_state_augmented_traj = Vector{Vector{Float64}}()
     
     for t_target in times
         # Find s such that t(s) = t_target
-        # Use bisection or linear search
-        s_low = s0
+        s_low = s_0
         s_high = s_end
-        s_guess = s0
+        s_guess = s_0
         
-        # Simple linear search (could be improved with bisection)
         for _ in 1:100
-            z_guess = sol(s_guess)
-            t_guess = z_guess[10]
+            ks_state_full_guess = sol(s_guess)
+            t_guess = ks_state_full_guess[10]
             
             if abs(t_guess - t_target) < 1e-6
                 break
@@ -137,13 +116,13 @@ function propagate_ks_with_time(p_state_0, t0, times, GM=SD.GM_EARTH)
             end
         end
         
-        z_final = sol(s_guess)
-        p_state = z_final[1:9]
-        x = state_ks_to_inertial(p_state[1:8])
-        push!(x_traj, x)
-        push!(p_state_traj, p_state)
+        ks_state_full_final = sol(s_guess)
+        ks_state_augmented_final = ks_state_full_final[1:9]
+        x_vec_final_ks = state_ks_to_cartesian(ks_state_augmented_final[1:8])
+        push!(x_vec_traj_ks, x_vec_final_ks)
+        push!(ks_state_augmented_traj, ks_state_augmented_final)
     end
     
-    return x_traj, p_state_traj
+    return x_vec_traj_ks, ks_state_augmented_traj
 end
 
