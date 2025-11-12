@@ -57,10 +57,10 @@ test_orbits = [
 # Define simulation parameters
 const SIM_PARAMS = (
     # Number of orbits to simulate
-    num_orbits=1,
+    num_orbits=2,
 
     # Sampling time (time step) in seconds
-    sampling_time=30.0,  # seconds
+    sampling_time=10.0,  # seconds
 
     # Integrator to use (from DifferentialEquations.jl)
     integrator=Tsit5,
@@ -228,25 +228,25 @@ if eccentric_idx !== nothing
     orbit_result = results[eccentric_idx].result
     println("\nGenerating plots for eccentric orbit (e=0.9)...")
 
-    p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (s)", ylabel="Position (m)")
-    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_vec_traj],
+    p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (h)", ylabel="Position (m)")
+    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj],
         label="Cartesian x", linewidth=2)
-    plot!(p1, orbit_result.times, [x[1] for x in orbit_result.x_vec_traj_ks],
+    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj_ks],
         label="KS x", linestyle=:dash, linewidth=2)
-    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_vec_traj],
+    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj],
         label="Cartesian y", linewidth=2)
-    plot!(p1, orbit_result.times, [x[2] for x in orbit_result.x_vec_traj_ks],
+    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj_ks],
         label="KS y", linestyle=:dash, linewidth=2)
 
-    p2 = plot(title="Position Error (e=0.9)", xlabel="Time (s)", ylabel="Error (m)")
+    p2 = plot(title="Position Error (e=0.9)", xlabel="Time (h)", ylabel="Error (m)")
     pos_errors = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_ks[i][1:3])
                   for i = 1:length(orbit_result.times)]
-    plot!(p2, orbit_result.times, pos_errors, label="Position error", linewidth=2)
+    plot!(p2, orbit_result.times / 3600, pos_errors, label="Position error", linewidth=2)
 
-    p3 = plot(title="Velocity Error (e=0.9)", xlabel="Time (s)", ylabel="Error (m/s)")
+    p3 = plot(title="Velocity Error (e=0.9)", xlabel="Time (h)", ylabel="Error (m/s)")
     vel_errors = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_ks[i][4:6])
                   for i = 1:length(orbit_result.times)]
-    plot!(p3, orbit_result.times, vel_errors, label="Velocity error", linewidth=2)
+    plot!(p3, orbit_result.times / 3600, vel_errors, label="Velocity error", linewidth=2)
 
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
     savefig(p_combined, "figs/dynamics_comparison.png")

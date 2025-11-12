@@ -151,7 +151,6 @@ function propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, G
 
     # Convert KS states to Cartesian
     x_vec_traj_ks = [state_ks_to_cartesian(ks_state_augmented_traj[k][1:8]) for k = 1:length(times)]
-    t_traj = [t_traj[k] for k = 1:length(times)]
     return x_vec_traj_ks, ks_state_augmented_traj, t_traj
 end
 
