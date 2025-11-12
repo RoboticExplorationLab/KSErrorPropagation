@@ -23,7 +23,7 @@ test_orbits = [
     (name="Circular orbit (750 km altitude)",
         a=750e3 + SD.R_EARTH,
         e=0.0,
-        i=deg2rad(98.2),
+        i=deg2rad(0.0),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
@@ -39,7 +39,7 @@ test_orbits = [
     (name="Moderate eccentricity (e=0.5, 750 km altitude)",
         a=750e3 + SD.R_EARTH,
         e=0.5,
-        i=deg2rad(98.2),
+        i=deg2rad(0.0),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
@@ -47,7 +47,7 @@ test_orbits = [
     (name="Low Earth orbit (e=0.1, 750 km altitude)",
         a=750e3 + SD.R_EARTH,
         e=0.1,
-        i=deg2rad(98.2),
+        i=deg2rad(0.0),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
@@ -57,7 +57,7 @@ test_orbits = [
 # Define simulation parameters
 const SIM_PARAMS = (
     # Number of orbits to simulate
-    num_orbits=2,
+    num_orbits=3,
 
     # Sampling time (time step) in seconds
     sampling_time=10.0,  # seconds
@@ -73,6 +73,44 @@ const SIM_PARAMS = (
     max_pos_error_threshold=1.0,      # meters
     max_vel_error_threshold=0.01,     # m/s
 )
+
+"""
+    propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+
+Compute analytical Keplerian orbit solution at given times.
+
+# Arguments
+- `oe_vec_0`: initial orbital elements [a, e, i, RAAN, omega, M0]
+- `times`: array of times to compute solution at
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_analytical`: array of Cartesian states [r_vec; v_vec] at each time
+"""
+function propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+    a, e, i, RAAN, omega, M0 = oe_vec_0
+    n = sqrt(GM / a^3)  # Mean motion
+
+    x_vec_traj_analytical = Vector{Vector{Float64}}()
+
+    for t in times
+        # Mean anomaly at time t: M(t) = M0 + n*(t - t0)
+        # Since t0 = times[1], we have M(t) = M0 + n*(t - times[1])
+        M_t = M0 + n * (t - times[1])
+
+        # Wrap mean anomaly to [0, 2π)
+        M_t = mod(M_t, 2π)
+
+        # Compute orbital elements at time t
+        oe_vec_t = [a, e, i, RAAN, omega, M_t]
+
+        # Convert to Cartesian coordinates (analytical solution)
+        x_vec_t = SD.sOSCtoCART(oe_vec_t; GM=GM, use_degrees=false)
+        push!(x_vec_traj_analytical, x_vec_t)
+    end
+
+    return x_vec_traj_analytical
+end
 
 # Function to test a single orbit
 function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
@@ -135,6 +173,12 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_keplerian_orbit(ks_state_augmented_0, times, SIM_PARAMS, GM)
     println("  Completed: ", length(ks_state_augmented_traj), " states")
 
+    # Compute analytical solution
+    println("Computing analytical solution...")
+    oe_vec_0 = [a, e, i, RAAN, omega, M]
+    x_vec_traj_analytical = propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+    println("  Completed: ", length(x_vec_traj_analytical), " states")
+
     # Compare the time histories from Cartesian and KS propagations
     time_diffs = [t_traj_cart[i] - t_traj_ks[i] for i in 1:min(length(t_traj_cart), length(t_traj_ks))]
     max_time_diff = maximum(abs.(time_diffs))
@@ -142,47 +186,118 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
     println("  Maximum absolute time difference: ", max_time_diff, " s")
     println("  Element-wise time differences (first 10): ", time_diffs[1:min(10, end)])
 
-    # Compare trajectories
-    max_pos_error = 0.0
-    max_vel_error = 0.0
-    max_pos_error_idx = 1
-    max_vel_error_idx = 1
+    # Compare trajectories: Cartesian vs KS
+    max_pos_error_cart_ks = 0.0
+    max_vel_error_cart_ks = 0.0
+    max_pos_error_idx_cart_ks = 1
+    max_vel_error_idx_cart_ks = 1
 
-    for i in 1:min(length(x_vec_traj), length(x_vec_traj_ks))
+    # Compare trajectories: Cartesian vs Analytical
+    max_pos_error_cart_analytical = 0.0
+    max_vel_error_cart_analytical = 0.0
+    max_pos_error_idx_cart_analytical = 1
+    max_vel_error_idx_cart_analytical = 1
+
+    # Compare trajectories: KS vs Analytical
+    max_pos_error_ks_analytical = 0.0
+    max_vel_error_ks_analytical = 0.0
+    max_pos_error_idx_ks_analytical = 1
+    max_vel_error_idx_ks_analytical = 1
+
+    N = min(length(x_vec_traj), length(x_vec_traj_ks), length(x_vec_traj_analytical))
+    for i in 1:N
         x_cart = x_vec_traj[i]
         x_ks = x_vec_traj_ks[i]
+        x_analytical = x_vec_traj_analytical[i]
 
-        pos_error = norm(x_cart[1:3] - x_ks[1:3])
-        vel_error = norm(x_cart[4:6] - x_ks[4:6])
-
-        if pos_error > max_pos_error
-            max_pos_error = pos_error
-            max_pos_error_idx = i
+        # Cartesian vs KS
+        pos_error_cart_ks = norm(x_cart[1:3] - x_ks[1:3])
+        vel_error_cart_ks = norm(x_cart[4:6] - x_ks[4:6])
+        if pos_error_cart_ks > max_pos_error_cart_ks
+            max_pos_error_cart_ks = pos_error_cart_ks
+            max_pos_error_idx_cart_ks = i
+        end
+        if vel_error_cart_ks > max_vel_error_cart_ks
+            max_vel_error_cart_ks = vel_error_cart_ks
+            max_vel_error_idx_cart_ks = i
         end
 
-        if vel_error > max_vel_error
-            max_vel_error = vel_error
-            max_vel_error_idx = i
+        # Cartesian vs Analytical
+        pos_error_cart_analytical = norm(x_cart[1:3] - x_analytical[1:3])
+        vel_error_cart_analytical = norm(x_cart[4:6] - x_analytical[4:6])
+        if pos_error_cart_analytical > max_pos_error_cart_analytical
+            max_pos_error_cart_analytical = pos_error_cart_analytical
+            max_pos_error_idx_cart_analytical = i
+        end
+        if vel_error_cart_analytical > max_vel_error_cart_analytical
+            max_vel_error_cart_analytical = vel_error_cart_analytical
+            max_vel_error_idx_cart_analytical = i
+        end
+
+        # KS vs Analytical
+        pos_error_ks_analytical = norm(x_ks[1:3] - x_analytical[1:3])
+        vel_error_ks_analytical = norm(x_ks[4:6] - x_analytical[4:6])
+        if pos_error_ks_analytical > max_pos_error_ks_analytical
+            max_pos_error_ks_analytical = pos_error_ks_analytical
+            max_pos_error_idx_ks_analytical = i
+        end
+        if vel_error_ks_analytical > max_vel_error_ks_analytical
+            max_vel_error_ks_analytical = vel_error_ks_analytical
+            max_vel_error_idx_ks_analytical = i
         end
     end
 
-    println("\nMaximum errors:")
-    println("  Position error: ", max_pos_error, " m (at step ", max_pos_error_idx, ")")
-    println("  Velocity error: ", max_vel_error, " m/s (at step ", max_vel_error_idx, ")")
+    println("\nMaximum errors (Cartesian vs KS):")
+    println("  Position error: ", max_pos_error_cart_ks, " m (at step ", max_pos_error_idx_cart_ks, ")")
+    println("  Velocity error: ", max_vel_error_cart_ks, " m/s (at step ", max_vel_error_idx_cart_ks, ")")
+
+    println("\nMaximum errors (Cartesian vs Analytical):")
+    println("  Position error: ", max_pos_error_cart_analytical, " m (at step ", max_pos_error_idx_cart_analytical, ")")
+    println("  Velocity error: ", max_vel_error_cart_analytical, " m/s (at step ", max_vel_error_idx_cart_analytical, ")")
+
+    println("\nMaximum errors (KS vs Analytical):")
+    println("  Position error: ", max_pos_error_ks_analytical, " m (at step ", max_pos_error_idx_ks_analytical, ")")
+    println("  Velocity error: ", max_vel_error_ks_analytical, " m/s (at step ", max_vel_error_idx_ks_analytical, ")")
 
     # Summary
-    success = max_pos_error < SIM_PARAMS.max_pos_error_threshold &&
-              max_vel_error < SIM_PARAMS.max_vel_error_threshold
+    success_cart_ks = max_pos_error_cart_ks < SIM_PARAMS.max_pos_error_threshold &&
+                      max_vel_error_cart_ks < SIM_PARAMS.max_vel_error_threshold
+    success_cart_analytical = max_pos_error_cart_analytical < SIM_PARAMS.max_pos_error_threshold &&
+                              max_vel_error_cart_analytical < SIM_PARAMS.max_vel_error_threshold
+    success_ks_analytical = max_pos_error_ks_analytical < SIM_PARAMS.max_pos_error_threshold &&
+                            max_vel_error_ks_analytical < SIM_PARAMS.max_vel_error_threshold
+
     println("\n" * "-"^80)
-    if success
-        println("✓ SUCCESS: Dynamics match within tolerance!")
+    if success_cart_ks
+        println("✓ SUCCESS: Cartesian and KS dynamics match within tolerance!")
     else
-        println("⚠ WARNING: Dynamics may not match perfectly")
+        println("⚠ WARNING: Cartesian and KS dynamics may not match perfectly")
+    end
+    if success_cart_analytical
+        println("✓ SUCCESS: Cartesian matches analytical solution within tolerance!")
+    else
+        println("⚠ WARNING: Cartesian may not match analytical solution perfectly")
+    end
+    if success_ks_analytical
+        println("✓ SUCCESS: KS matches analytical solution within tolerance!")
+    else
+        println("⚠ WARNING: KS may not match analytical solution perfectly")
     end
     println("-"^80)
 
-    return (success=success, max_pos_error=max_pos_error, max_vel_error=max_vel_error, 
-        x_vec_traj=x_vec_traj, x_vec_traj_ks=x_vec_traj_ks, times=times)
+    return (success_cart_ks=success_cart_ks,
+        success_cart_analytical=success_cart_analytical,
+        success_ks_analytical=success_ks_analytical,
+        max_pos_error_cart_ks=max_pos_error_cart_ks,
+        max_vel_error_cart_ks=max_vel_error_cart_ks,
+        max_pos_error_cart_analytical=max_pos_error_cart_analytical,
+        max_vel_error_cart_analytical=max_vel_error_cart_analytical,
+        max_pos_error_ks_analytical=max_pos_error_ks_analytical,
+        max_vel_error_ks_analytical=max_vel_error_ks_analytical,
+        x_vec_traj=x_vec_traj,
+        x_vec_traj_ks=x_vec_traj_ks,
+        x_vec_traj_analytical=x_vec_traj_analytical,
+        times=times)
 end
 
 # Run tests for all orbits
@@ -202,20 +317,39 @@ println("\n" * "="^80)
 println("OVERALL SUMMARY")
 println("="^80)
 
-all_passed = true
+all_cart_ks_passed = true
+all_cart_analytical_passed = true
+all_ks_analytical_passed = true
+
 for (i, (orbit, result)) in enumerate(results)
-    status = result.success ? "✓ PASS" : "✗ FAIL"
+    status_cart_ks = result.success_cart_ks ? "✓ PASS" : "✗ FAIL"
+    status_cart_analytical = result.success_cart_analytical ? "✓ PASS" : "✗ FAIL"
+    status_ks_analytical = result.success_ks_analytical ? "✓ PASS" : "✗ FAIL"
+
     println("\n$(i). $(orbit.name)")
-    println("   Status: $(status)")
-    println("   Max position error: $(result.max_pos_error) m")
-    println("   Max velocity error: $(result.max_vel_error) m/s")
-    if !result.success
-        global all_passed = false
+    println("   Cartesian vs KS: $(status_cart_ks)")
+    println("      Max position error: $(result.max_pos_error_cart_ks) m")
+    println("      Max velocity error: $(result.max_vel_error_cart_ks) m/s")
+    println("   Cartesian vs Analytical: $(status_cart_analytical)")
+    println("      Max position error: $(result.max_pos_error_cart_analytical) m")
+    println("      Max velocity error: $(result.max_vel_error_cart_analytical) m/s")
+    println("   KS vs Analytical: $(status_ks_analytical)")
+    println("      Max position error: $(result.max_pos_error_ks_analytical) m")
+    println("      Max velocity error: $(result.max_vel_error_ks_analytical) m/s")
+
+    if !result.success_cart_ks
+        global all_cart_ks_passed = false
+    end
+    if !result.success_cart_analytical
+        global all_cart_analytical_passed = false
+    end
+    if !result.success_ks_analytical
+        global all_ks_analytical_passed = false
     end
 end
 
 println("\n" * "="^80)
-if all_passed
+if all_cart_ks_passed && all_cart_analytical_passed && all_ks_analytical_passed
     println("✓ ALL TESTS PASSED!")
 else
     println("⚠ SOME TESTS FAILED - Check results above")
@@ -233,20 +367,38 @@ if eccentric_idx !== nothing
         label="Cartesian x", linewidth=2)
     plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj_ks],
         label="KS x", linestyle=:dash, linewidth=2)
+    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj_analytical],
+        label="Analytical x", linestyle=:dot, linewidth=2)
     plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj],
         label="Cartesian y", linewidth=2)
     plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj_ks],
         label="KS y", linestyle=:dash, linewidth=2)
+    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj_analytical],
+        label="Analytical y", linestyle=:dot, linewidth=2)
 
-    p2 = plot(title="Position Error (e=0.9)", xlabel="Time (h)", ylabel="Error (m)")
-    pos_errors = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_ks[i][1:3])
-                  for i = 1:length(orbit_result.times)]
-    plot!(p2, orbit_result.times / 3600, pos_errors, label="Position error", linewidth=2)
+    # Position errors (all on one plot)
+    p2 = plot(title="Position Errors (e=0.9)", xlabel="Time (h)", ylabel="Error (m)")
+    pos_errors_cart_ks = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_ks[i][1:3])
+                          for i = 1:length(orbit_result.times)]
+    pos_errors_cart_analytical = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_analytical[i][1:3])
+                                  for i = 1:length(orbit_result.times)]
+    pos_errors_ks_analytical = [norm(orbit_result.x_vec_traj_ks[i][1:3] - orbit_result.x_vec_traj_analytical[i][1:3])
+                                for i = 1:length(orbit_result.times)]
+    plot!(p2, orbit_result.times / 3600, pos_errors_cart_ks, label="Cartesian-KS", linewidth=2)
+    plot!(p2, orbit_result.times / 3600, pos_errors_cart_analytical, label="Cartesian-Analytical", linewidth=2)
+    plot!(p2, orbit_result.times / 3600, pos_errors_ks_analytical, label="KS-Analytical", linewidth=2)
 
-    p3 = plot(title="Velocity Error (e=0.9)", xlabel="Time (h)", ylabel="Error (m/s)")
-    vel_errors = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_ks[i][4:6])
-                  for i = 1:length(orbit_result.times)]
-    plot!(p3, orbit_result.times / 3600, vel_errors, label="Velocity error", linewidth=2)
+    # Velocity errors (all on one plot)
+    p3 = plot(title="Velocity Errors (e=0.9)", xlabel="Time (h)", ylabel="Error (m/s)")
+    vel_errors_cart_ks = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_ks[i][4:6])
+                          for i = 1:length(orbit_result.times)]
+    vel_errors_cart_analytical = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_analytical[i][4:6])
+                                  for i = 1:length(orbit_result.times)]
+    vel_errors_ks_analytical = [norm(orbit_result.x_vec_traj_ks[i][4:6] - orbit_result.x_vec_traj_analytical[i][4:6])
+                                for i = 1:length(orbit_result.times)]
+    plot!(p3, orbit_result.times / 3600, vel_errors_cart_ks, label="Cartesian-KS", linewidth=2)
+    plot!(p3, orbit_result.times / 3600, vel_errors_cart_analytical, label="Cartesian-Analytical", linewidth=2)
+    plot!(p3, orbit_result.times / 3600, vel_errors_ks_analytical, label="KS-Analytical", linewidth=2)
 
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
     savefig(p_combined, "figs/dynamics_comparison.png")
