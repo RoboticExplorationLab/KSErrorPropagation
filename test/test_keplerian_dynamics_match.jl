@@ -14,44 +14,45 @@ const SD = SatelliteDynamics
 
 include("../src/cartesian_dynamics.jl")
 include("../src/ks_dynamics.jl")
+include("../src/utils.jl")
 
 const GM = SD.GM_EARTH
 const R_EARTH = SD.R_EARTH
 
 # Define test orbits
 test_orbits = [
-    # (name="Circular orbit (750 km altitude)",
-    #     a=750e3 + SD.R_EARTH,
-    #     e=0.0,
-    #     i=deg2rad(0.0),
-    #     omega=deg2rad(0.0),
-    #     RAAN=deg2rad(0.0),
-    #     M=deg2rad(0.0),
-    #     description="Circular orbit"),
+    (name="Circular orbit (750 km altitude)",
+        a=750e3 + R_EARTH,
+        e=0.0,
+        i=deg2rad(0.0),
+        omega=deg2rad(0.0),
+        RAAN=deg2rad(0.0),
+        M=deg2rad(0.0),
+        description="Circular orbit"),
     (name="Eccentric orbit (e=0.9, 750 km altitude)",
-        a=750e3 + SD.R_EARTH,
+        a=750e3 + R_EARTH,
         e=0.9,
         i=deg2rad(0.0),#i=deg2rad(98.2),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
         description="Highly eccentric orbit"),
-    # (name="Moderate eccentricity (e=0.5, 750 km altitude)",
-    #     a=750e3 + SD.R_EARTH,
-    #     e=0.5,
-    #     i=deg2rad(0.0),
-    #     omega=deg2rad(0.0),
-    #     RAAN=deg2rad(0.0),
-    #     M=deg2rad(0.0),
-    #     description="Moderate eccentricity"),
-    # (name="Low Earth orbit (e=0.1, 750 km altitude)",
-    #     a=750e3 + SD.R_EARTH,
-    #     e=0.1,
-    #     i=deg2rad(0.0),
-    #     omega=deg2rad(0.0),
-    #     RAAN=deg2rad(0.0),
-    #     M=deg2rad(0.0),
-    #     description="Low eccentricity"),
+    (name="Moderate eccentricity (e=0.5, 750 km altitude)",
+        a=750e3 + R_EARTH,
+        e=0.5,
+        i=deg2rad(0.0),
+        omega=deg2rad(0.0),
+        RAAN=deg2rad(0.0),
+        M=deg2rad(0.0),
+        description="Moderate eccentricity"),
+    (name="Low Earth orbit (e=0.1, 750 km altitude)",
+        a=750e3 + R_EARTH,
+        e=0.1,
+        i=deg2rad(0.0),
+        omega=deg2rad(0.0),
+        RAAN=deg2rad(0.0),
+        M=deg2rad(0.0),
+        description="Low eccentricity"),
 ]
 
 # Define simulation parameters
@@ -438,7 +439,7 @@ if eccentric_idx !== nothing
     plot!(p3, orbit_result.times / 3600, vel_errors_ks_analytical / vel_error_scale, label="KS-Analytical", linewidth=2)
 
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
-    savefig(p_combined, "figs/dynamics_comparison.png")
-    println("  Saved plot to figs/dynamics_comparison.png")
+    savefig(p_combined, "figs/test_keplerian_dynamics_match.png")
+    println("  Saved plot to figs/test_keplerian_dynamics_match.png")
 end
 
