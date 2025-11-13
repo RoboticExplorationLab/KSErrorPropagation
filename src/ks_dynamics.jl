@@ -411,7 +411,35 @@ function ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
     y_vec_pprime = (y_vec'y_vec / 2.0) * (L(y_vec)' * [a_J2; 0.0])
 
     h_prime = -2 * y_vec_prime' * L(y_vec)' * [a_J2; 0.0]
-    
+
+    return [zeros(4); y_vec_pprime; h_prime]
+end
+
+"""
+    ks_drag_perturbation(ks_state_augmented, s, epoch, OMEGA_EARTH, CD, A, m)
+
+KS drag perturbation.
+
+# Arguments
+- `ks_state_augmented`: KS augmented state vector [y_vec; y_vec_prime; h]
+- `s`: fictitious time (not used but required for ODE interface)
+- `epoch`: current epoch (Epoch object)
+- `OMEGA_EARTH`: Earth rotation rate
+- `CD`: drag coefficient
+- `A`: cross-sectional area
+- `m`: mass
+"""
+function ks_drag_perturbation(ks_state_augmented, s, epoch, OMEGA_EARTH, CD, A, m)
+    y_vec = ks_state_augmented[1:4]
+    y_vec_prime = ks_state_augmented[5:8]
+    ks_state = ks_state_augmented[1:8]
+
+    x_vec = state_ks_to_cartesian(ks_state)
+    a_drag = cartesian_drag_perturbation(x_vec, s, epoch, OMEGA_EARTH, CD, A, m)
+    y_vec_pprime = (y_vec'y_vec / 2.0) * (L(y_vec)' * [a_drag; 0.0])
+
+    h_prime = -2 * y_vec_prime' * L(y_vec)' * [a_drag; 0.0]
+
     return [zeros(4); y_vec_pprime; h_prime]
 end
 
@@ -423,18 +451,23 @@ In-place version for DifferentialEquations.jl.
 # Arguments
 - `ks_state_augmented_prime`: output derivative vector
 - `ks_state_augmented`: state vector [y_vec; y_vec_prime; h]
-- `p`: parameters (GM, R_EARTH, J2)
-- `t`: time
+- `p`: parameters (GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
+- `s`: fictitious time
 """
 function ks_perturbed_dynamics!(ks_state_full_prime, ks_state_full, p, s)
-    GM = p isa Number ? p : p[1]
-    R_EARTH = p isa Number ? p : p[2]
-    J2 = p isa Number ? p : p[3]
+    # Unpack parameters tuple: (GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
+    GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m = p
 
     ks_state_augmented = ks_state_full[1:9]
+    t_current = ks_state_full[10]  # Current real time
+
+    # Update epoch to current time (t_current is elapsed time since initial epoch)
+    epoch = epoch_0 + t_current
 
     # KS dynamics
-    ks_state_augmented_prime = ks_gravity(ks_state_augmented, s, GM) + ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
+    ks_state_augmented_prime = ks_gravity(ks_state_augmented, s, GM)
+    ks_state_augmented_prime += ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
+    ks_state_augmented_prime += ks_drag_perturbation(ks_state_augmented, s, epoch, OMEGA_EARTH, CD, A, m)
 
     # Time derivative: dt/ds = r = y'y
     y_vec = ks_state_augmented[1:4]
@@ -445,7 +478,7 @@ function ks_perturbed_dynamics!(ks_state_full_prime, ks_state_full, p, s)
 end
 
 """
-    propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2)
+    propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
 
 Propagate KS state with time tracking using perturbed dynamics.
 
@@ -456,8 +489,13 @@ Propagate KS state with time tracking using perturbed dynamics.
 - `GM`: gravitational parameter
 - `R_EARTH`: Earth radius
 - `J2`: J2 coefficient
+- `epoch_0`: initial epoch (Epoch object)
+- `OMEGA_EARTH`: Earth rotation rate
+- `CD`: drag coefficient
+- `A`: cross-sectional area
+- `m`: mass
 """
-function propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2)
+function propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
     # KS full state vector: [y_vec; y_vec_prime; h; t]
     ks_state_full_0 = [ks_state_augmented_0; times[1]]
 
@@ -488,7 +526,8 @@ function propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params
     s_0 = 0.0
     s_end = (times[end] - times[1]) / r_vec_norm_0 # * 2.0  # Add margin
 
-    prob = ODEProblem(ks_perturbed_dynamics!, ks_state_full_0, (s_0, s_end), [GM, R_EARTH, J2])
+    # Use tuple instead of array for better performance with mixed types
+    prob = ODEProblem(ks_perturbed_dynamics!, ks_state_full_0, (s_0, s_end), (GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m))
     sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
 
     # Convert KS states to Cartesian

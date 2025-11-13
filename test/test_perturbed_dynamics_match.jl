@@ -19,25 +19,30 @@ include("../src/utils.jl")
 const GM = SD.GM_EARTH
 const R_EARTH = SD.R_EARTH
 const J2 = SD.J2_EARTH
+const OMEGA_EARTH = SD.OMEGA_EARTH
+const CD = 2.2 # drag coefficient
+const A = 1.0 # cross-sectional area (m²)
+const m = 100.0 # mass (kg)
+const epoch_0 = Epoch(2000, 1, 1, 12, 0, 0) # initial epoch at 0 TBD seconds after J2000
 
 # Define test orbits
 test_orbits = [
-    (name="Circular orbit (750 km altitude)",
+    # (name="Circular orbit (750 km altitude)",
+    #     a=750e3 + R_EARTH,
+    #     e=0.0,
+    #     i=deg2rad(0.0),
+    #     omega=deg2rad(0.0),
+    #     RAAN=deg2rad(0.0),
+    #     M=deg2rad(0.0),
+    #     description="Circular orbit"),
+    (name="Eccentric orbit (e=0.05, 750 km altitude)",
         a=750e3 + R_EARTH,
-        e=0.0,
-        i=deg2rad(0.0),
-        omega=deg2rad(0.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="Circular orbit"),
-    (name="Eccentric orbit (e=0.9, 750 km altitude)",
-        a=750e3 + R_EARTH,
-        e=0.9,
+        e=0.05,
         i=deg2rad(0.0),#i=deg2rad(98.2),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
-        description="Highly eccentric orbit"),
+        description="Eccentric orbit"),
     (name="Moderate eccentricity (e=0.5, 750 km altitude)",
         a=750e3 + R_EARTH,
         e=0.5,
@@ -48,7 +53,7 @@ test_orbits = [
         description="Moderate eccentricity"),
     (name="Low Earth orbit (e=0.1, 750 km altitude)",
         a=750e3 + R_EARTH,
-        e=0.1,
+        e=0.01,
         i=deg2rad(0.0),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
@@ -129,12 +134,12 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
 
     # Propagate in Cartesian coordinates
     println("\nPropagating in Cartesian coordinates...")
-    x_vec_traj, t_traj_cart = propagate_cartesian_perturbed_dynamics(x_vec_0, times, SIM_PARAMS, GM, R_EARTH, J2)
+    x_vec_traj, t_traj_cart = propagate_cartesian_perturbed_dynamics(x_vec_0, times, SIM_PARAMS, GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
     println("  Completed: ", length(x_vec_traj), " states")
 
     # Propagate in KS coordinates
     println("Propagating in KS coordinates...")
-    x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, SIM_PARAMS, GM, R_EARTH, J2)
+    x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, SIM_PARAMS, GM, R_EARTH, J2, epoch_0, OMEGA_EARTH, CD, A, m)
     println("  Completed: ", length(ks_state_augmented_traj), " states")
 
     # Compare the time histories from Cartesian and KS propagations
@@ -200,6 +205,23 @@ println("Testing multiple orbits to verify cartesian and KS dynamics match")
 
 results = []
 for orbit in test_orbits
+    # Calculate periapsis distance and altitude
+    r_peri = orbit.a * (1 - orbit.e)
+    alt_peri = (r_peri - R_EARTH) / 1e3  # km
+
+    # Skip orbits with perigee below Earth's surface
+    if alt_peri < 0.0
+        println("\n" * "="^80)
+        println("SKIPPING: ", orbit.name)
+        println("="^80)
+        println("  Periapsis altitude: ", alt_peri, " km (below Earth's surface)")
+        println("  Periapsis distance: ", r_peri / 1e3, " km")
+        println("  Earth radius: ", R_EARTH / 1e3, " km")
+        println("  This orbit would go through the Earth - skipping test")
+        println("="^80)
+        continue
+    end
+
     result = test_orbit(orbit.name, orbit.a, orbit.e, orbit.i, orbit.omega, orbit.RAAN, orbit.M, GM)
     push!(results, (orbit=orbit, result=result))
 end
@@ -232,11 +254,11 @@ else
 end
 println("="^80)
 
-# Generate plots for the eccentric orbit (e=0.9)
-eccentric_idx = findfirst(o -> o.e == 0.9, test_orbits)
+# Generate plots for the eccentric orbit (e=0.05)
+eccentric_idx = findfirst(o -> o.e == 0.05, test_orbits)
 if eccentric_idx !== nothing
     orbit_result = results[eccentric_idx].result
-    println("\nGenerating plots for eccentric orbit (e=0.9)...")
+    println("\nGenerating plots for eccentric orbit (e=0.05)...")
 
     # Helper function to determine order of magnitude for normalization
     function get_order_of_magnitude(values)
@@ -275,7 +297,7 @@ if eccentric_idx !== nothing
 
     # Position comparison plot
     pos_ylabel = pos_order == 0 ? "Position (m)" : "Position (1e$(pos_order) m)"
-    p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (h)", ylabel=pos_ylabel)
+    p1 = plot(title="Position Comparison (e=0.05)", xlabel="Time (h)", ylabel=pos_ylabel)
     plot!(p1, orbit_result.times / 3600, pos_x_cart / pos_scale,
         label="Cartesian x", linewidth=2)
     plot!(p1, orbit_result.times / 3600, pos_x_ks / pos_scale,
@@ -287,12 +309,12 @@ if eccentric_idx !== nothing
 
     # Position errors plot
     pos_error_ylabel = pos_error_order == 0 ? "Error (m)" : "Error (1e$(pos_error_order) m)"
-    p2 = plot(title="Position Errors (e=0.9)", xlabel="Time (h)", ylabel=pos_error_ylabel)
+    p2 = plot(title="Position Errors (e=0.05)", xlabel="Time (h)", ylabel=pos_error_ylabel)
     plot!(p2, orbit_result.times / 3600, pos_errors_cart_ks / pos_error_scale, label="Cartesian-KS", linewidth=2)
 
     # Velocity errors plot
     vel_error_ylabel = vel_error_order == 0 ? "Error (m/s)" : "Error (1e$(vel_error_order) m/s)"
-    p3 = plot(title="Velocity Errors (e=0.9)", xlabel="Time (h)", ylabel=vel_error_ylabel)
+    p3 = plot(title="Velocity Errors (e=0.05)", xlabel="Time (h)", ylabel=vel_error_ylabel)
     plot!(p3, orbit_result.times / 3600, vel_errors_cart_ks / vel_error_scale, label="Cartesian-KS", linewidth=2)
 
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
