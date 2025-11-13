@@ -6,6 +6,7 @@ using LinearAlgebra
 using DifferentialEquations
 
 include("ks_transform.jl")
+include("cartesian_dynamics.jl")
 
 """
     ks_gravity(ks_state_augmented, s, GM)
@@ -379,6 +380,116 @@ function propagate_ks_analytical_keplerian_orbit(ks_state_augmented_0, times, si
     else
         error("Only elliptic case (h > 0) is currently implemented with STM approach")
     end
+
+    # Convert KS states to Cartesian
+    x_vec_traj_ks = [state_ks_to_cartesian(ks_state_augmented_traj[k][1:8]) for k = 1:length(times)]
+    return x_vec_traj_ks, ks_state_augmented_traj, t_traj
+end
+
+"""
+    ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
+
+KS J2 perturbation.
+
+# Arguments
+- `ks_state_augmented`: KS augmented state vector [y_vec; y_vec_prime; h]
+- `s`: fictitious time (not used but required for ODE interface)
+- `GM`: gravitational parameter (default: GM_EARTH)
+- `R_EARTH`: Earth radius
+- `J2`: J2 coefficient
+
+# Returns
+- `ks_state_augmented_prime`: KS augmented state vector derivative [y_vec_prime; y_vec_pprime; h_prime]
+"""
+function ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
+    y_vec = ks_state_augmented[1:4]
+    y_vec_prime = ks_state_augmented[5:8]
+    ks_state = ks_state_augmented[1:8]
+
+    x_vec = state_ks_to_cartesian(ks_state)
+    a_J2 = cartesian_J2_perturbation(x_vec, s, GM, R_EARTH, J2)
+    y_vec_pprime = (y_vec'y_vec / 2.0) * (L(y_vec)' * [a_J2; 0.0])
+
+    h_prime = -2 * y_vec_prime' * L(y_vec)' * [a_J2; 0.0]
+    
+    return [zeros(4); y_vec_pprime; h_prime]
+end
+
+"""
+    ks_perturbed_dynamics!(ks_state_augmented_prime, ks_state_augmented, p, s)
+
+In-place version for DifferentialEquations.jl.
+
+# Arguments
+- `ks_state_augmented_prime`: output derivative vector
+- `ks_state_augmented`: state vector [y_vec; y_vec_prime; h]
+- `p`: parameters (GM, R_EARTH, J2)
+- `t`: time
+"""
+function ks_perturbed_dynamics!(ks_state_full_prime, ks_state_full, p, s)
+    GM = p isa Number ? p : p[1]
+    R_EARTH = p isa Number ? p : p[2]
+    J2 = p isa Number ? p : p[3]
+
+    ks_state_augmented = ks_state_full[1:9]
+
+    # KS dynamics
+    ks_state_augmented_prime = ks_gravity(ks_state_augmented, s, GM) + ks_J2_perturbation(ks_state_augmented, s, GM, R_EARTH, J2)
+
+    # Time derivative: dt/ds = r = y'y
+    y_vec = ks_state_augmented[1:4]
+    r_vec_norm = y_vec'y_vec
+    t_prime = r_vec_norm
+
+    ks_state_full_prime .= [ks_state_augmented_prime; t_prime]
+end
+
+"""
+    propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2)
+
+Propagate KS state with time tracking using perturbed dynamics.
+
+# Arguments
+- `ks_state_augmented_0`: initial KS augmented state [y_vec; y_vec_prime; h]
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+- `R_EARTH`: Earth radius
+- `J2`: J2 coefficient
+"""
+function propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params, GM, R_EARTH, J2)
+    # KS full state vector: [y_vec; y_vec_prime; h; t]
+    ks_state_full_0 = [ks_state_augmented_0; times[1]]
+
+    # Pre-allocate trajectory storage
+    ks_state_augmented_traj = [zeros(9) for k = 1:length(times)]
+    ks_state_augmented_traj[1] .= ks_state_augmented_0
+    t_traj = zeros(length(times))
+    t_traj[1] = times[1]
+
+    # Callback to save states at specific real time points
+    function condition!(out, ks_state_full, s, sol)
+        t_current = ks_state_full[10]  # Real time is the 10th element
+        out .= times .- t_current
+    end
+
+    function affect!(sol, idx)
+        if idx <= length(times)
+            ks_state_augmented_traj[idx] .= sol.u[1:9]
+            t_traj[idx] = sol.u[10]
+        end
+    end
+
+    cb = VectorContinuousCallback(condition!, affect!, length(times))
+
+    # Estimate fictitious time span
+    y_vec_0 = ks_state_augmented_0[1:4]
+    r_vec_norm_0 = y_vec_0'y_vec_0
+    s_0 = 0.0
+    s_end = (times[end] - times[1]) / r_vec_norm_0 # * 2.0  # Add margin
+
+    prob = ODEProblem(ks_perturbed_dynamics!, ks_state_full_0, (s_0, s_end), [GM, R_EARTH, J2])
+    sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
 
     # Convert KS states to Cartesian
     x_vec_traj_ks = [state_ks_to_cartesian(ks_state_augmented_traj[k][1:8]) for k = 1:length(times)]
