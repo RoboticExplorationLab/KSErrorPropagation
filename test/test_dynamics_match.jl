@@ -20,38 +20,38 @@ const R_EARTH = SD.R_EARTH
 
 # Define test orbits
 test_orbits = [
-    (name="Circular orbit (750 km altitude)",
-        a=750e3 + SD.R_EARTH,
-        e=0.0,
-        i=deg2rad(0.0),
-        omega=deg2rad(0.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="Circular orbit"),
+    # (name="Circular orbit (750 km altitude)",
+    #     a=750e3 + SD.R_EARTH,
+    #     e=0.0,
+    #     i=deg2rad(0.0),
+    #     omega=deg2rad(0.0),
+    #     RAAN=deg2rad(0.0),
+    #     M=deg2rad(0.0),
+    #     description="Circular orbit"),
     (name="Eccentric orbit (e=0.9, 750 km altitude)",
         a=750e3 + SD.R_EARTH,
         e=0.9,
-        i=deg2rad(98.2),
+        i=deg2rad(0.0),#i=deg2rad(98.2),
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
         description="Highly eccentric orbit"),
-    (name="Moderate eccentricity (e=0.5, 750 km altitude)",
-        a=750e3 + SD.R_EARTH,
-        e=0.5,
-        i=deg2rad(0.0),
-        omega=deg2rad(0.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="Moderate eccentricity"),
-    (name="Low Earth orbit (e=0.1, 750 km altitude)",
-        a=750e3 + SD.R_EARTH,
-        e=0.1,
-        i=deg2rad(0.0),
-        omega=deg2rad(0.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="Low eccentricity"),
+    # (name="Moderate eccentricity (e=0.5, 750 km altitude)",
+    #     a=750e3 + SD.R_EARTH,
+    #     e=0.5,
+    #     i=deg2rad(0.0),
+    #     omega=deg2rad(0.0),
+    #     RAAN=deg2rad(0.0),
+    #     M=deg2rad(0.0),
+    #     description="Moderate eccentricity"),
+    # (name="Low Earth orbit (e=0.1, 750 km altitude)",
+    #     a=750e3 + SD.R_EARTH,
+    #     e=0.1,
+    #     i=deg2rad(0.0),
+    #     omega=deg2rad(0.0),
+    #     RAAN=deg2rad(0.0),
+    #     M=deg2rad(0.0),
+    #     description="Low eccentricity"),
 ]
 
 # Define simulation parameters
@@ -60,7 +60,7 @@ const SIM_PARAMS = (
     num_orbits=3,
 
     # Sampling time (time step) in seconds
-    sampling_time=10.0,  # seconds
+    sampling_time=30.0,  # seconds
 
     # Integrator to use (from DifferentialEquations.jl)
     integrator=Tsit5,
@@ -80,7 +80,7 @@ const SIM_PARAMS = (
 Compute analytical Keplerian orbit solution at given times.
 
 # Arguments
-- `oe_vec_0`: initial orbital elements [a, e, i, RAAN, omega, M0]
+- `oe_vec_0`: initial orbital elements [a, e, i, RAAN, omega, M_0]
 - `times`: array of times to compute solution at
 - `GM`: gravitational parameter
 
@@ -88,15 +88,15 @@ Compute analytical Keplerian orbit solution at given times.
 - `x_vec_traj_analytical`: array of Cartesian states [r_vec; v_vec] at each time
 """
 function propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
-    a, e, i, RAAN, omega, M0 = oe_vec_0
+    a, e, i, RAAN, omega, M_0 = oe_vec_0
     n = sqrt(GM / a^3)  # Mean motion
 
     x_vec_traj_analytical = Vector{Vector{Float64}}()
 
     for t in times
-        # Mean anomaly at time t: M(t) = M0 + n*(t - t0)
-        # Since t0 = times[1], we have M(t) = M0 + n*(t - times[1])
-        M_t = M0 + n * (t - times[1])
+        # Mean anomaly at time t: M(t) = M_0 + n*(t - t_0)
+        # Since t_0 = times[1], we have M(t) = M_0 + n*(t - times[1])
+        M_t = M_0 + n * (t - times[1])
 
         # Wrap mean anomaly to [0, 2π)
         M_t = mod(M_t, 2π)
@@ -362,43 +362,80 @@ if eccentric_idx !== nothing
     orbit_result = results[eccentric_idx].result
     println("\nGenerating plots for eccentric orbit (e=0.9)...")
 
-    p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (h)", ylabel="Position (m)")
-    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj],
-        label="Cartesian x", linewidth=2)
-    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj_ks],
-        label="KS x", linestyle=:dash, linewidth=2)
-    plot!(p1, orbit_result.times / 3600, [x[1] for x in orbit_result.x_vec_traj_analytical],
-        label="Analytical x", linestyle=:dot, linewidth=2)
-    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj],
-        label="Cartesian y", linewidth=2)
-    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj_ks],
-        label="KS y", linestyle=:dash, linewidth=2)
-    plot!(p1, orbit_result.times / 3600, [x[2] for x in orbit_result.x_vec_traj_analytical],
-        label="Analytical y", linestyle=:dot, linewidth=2)
+    # Helper function to determine order of magnitude for normalization
+    function get_order_of_magnitude(values)
+        max_abs = maximum(abs.(values))
+        if max_abs == 0.0
+            return 0
+        end
+        return Int(floor(log10(max_abs)))
+    end
 
-    # Position errors (all on one plot)
-    p2 = plot(title="Position Errors (e=0.9)", xlabel="Time (h)", ylabel="Error (m)")
+    # Position data
+    pos_x_cart = [x[1] for x in orbit_result.x_vec_traj]
+    pos_x_ks = [x[1] for x in orbit_result.x_vec_traj_ks]
+    pos_x_analytical = [x[1] for x in orbit_result.x_vec_traj_analytical]
+    pos_y_cart = [x[2] for x in orbit_result.x_vec_traj]
+    pos_y_ks = [x[2] for x in orbit_result.x_vec_traj_ks]
+    pos_y_analytical = [x[2] for x in orbit_result.x_vec_traj_analytical]
+
+    all_pos_values = vcat(pos_x_cart, pos_x_ks, pos_x_analytical, pos_y_cart, pos_y_ks, pos_y_analytical)
+    pos_order = get_order_of_magnitude(all_pos_values)
+    pos_scale = 10.0^pos_order
+
+    # Position errors
     pos_errors_cart_ks = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_ks[i][1:3])
                           for i = 1:length(orbit_result.times)]
     pos_errors_cart_analytical = [norm(orbit_result.x_vec_traj[i][1:3] - orbit_result.x_vec_traj_analytical[i][1:3])
                                   for i = 1:length(orbit_result.times)]
     pos_errors_ks_analytical = [norm(orbit_result.x_vec_traj_ks[i][1:3] - orbit_result.x_vec_traj_analytical[i][1:3])
                                 for i = 1:length(orbit_result.times)]
-    plot!(p2, orbit_result.times / 3600, pos_errors_cart_ks, label="Cartesian-KS", linewidth=2)
-    plot!(p2, orbit_result.times / 3600, pos_errors_cart_analytical, label="Cartesian-Analytical", linewidth=2)
-    plot!(p2, orbit_result.times / 3600, pos_errors_ks_analytical, label="KS-Analytical", linewidth=2)
 
-    # Velocity errors (all on one plot)
-    p3 = plot(title="Velocity Errors (e=0.9)", xlabel="Time (h)", ylabel="Error (m/s)")
+    all_pos_errors = vcat(pos_errors_cart_ks, pos_errors_cart_analytical, pos_errors_ks_analytical)
+    pos_error_order = get_order_of_magnitude(all_pos_errors)
+    pos_error_scale = 10.0^pos_error_order
+
+    # Velocity errors
     vel_errors_cart_ks = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_ks[i][4:6])
                           for i = 1:length(orbit_result.times)]
     vel_errors_cart_analytical = [norm(orbit_result.x_vec_traj[i][4:6] - orbit_result.x_vec_traj_analytical[i][4:6])
                                   for i = 1:length(orbit_result.times)]
     vel_errors_ks_analytical = [norm(orbit_result.x_vec_traj_ks[i][4:6] - orbit_result.x_vec_traj_analytical[i][4:6])
                                 for i = 1:length(orbit_result.times)]
-    plot!(p3, orbit_result.times / 3600, vel_errors_cart_ks, label="Cartesian-KS", linewidth=2)
-    plot!(p3, orbit_result.times / 3600, vel_errors_cart_analytical, label="Cartesian-Analytical", linewidth=2)
-    plot!(p3, orbit_result.times / 3600, vel_errors_ks_analytical, label="KS-Analytical", linewidth=2)
+
+    all_vel_errors = vcat(vel_errors_cart_ks, vel_errors_cart_analytical, vel_errors_ks_analytical)
+    vel_error_order = get_order_of_magnitude(all_vel_errors)
+    vel_error_scale = 10.0^vel_error_order
+
+    # Position comparison plot
+    pos_ylabel = pos_order == 0 ? "Position (m)" : "Position (1e$(pos_order) m)"
+    p1 = plot(title="Position Comparison (e=0.9)", xlabel="Time (h)", ylabel=pos_ylabel)
+    plot!(p1, orbit_result.times / 3600, pos_x_cart / pos_scale,
+        label="Cartesian x", linewidth=2)
+    plot!(p1, orbit_result.times / 3600, pos_x_ks / pos_scale,
+        label="KS x", linestyle=:dash, linewidth=2)
+    plot!(p1, orbit_result.times / 3600, pos_x_analytical / pos_scale,
+        label="Analytical x", linestyle=:dot, linewidth=2)
+    plot!(p1, orbit_result.times / 3600, pos_y_cart / pos_scale,
+        label="Cartesian y", linewidth=2)
+    plot!(p1, orbit_result.times / 3600, pos_y_ks / pos_scale,
+        label="KS y", linestyle=:dash, linewidth=2)
+    plot!(p1, orbit_result.times / 3600, pos_y_analytical / pos_scale,
+        label="Analytical y", linestyle=:dot, linewidth=2)
+
+    # Position errors plot
+    pos_error_ylabel = pos_error_order == 0 ? "Error (m)" : "Error (1e$(pos_error_order) m)"
+    p2 = plot(title="Position Errors (e=0.9)", xlabel="Time (h)", ylabel=pos_error_ylabel)
+    plot!(p2, orbit_result.times / 3600, pos_errors_cart_ks / pos_error_scale, label="Cartesian-KS", linewidth=2)
+    plot!(p2, orbit_result.times / 3600, pos_errors_cart_analytical / pos_error_scale, label="Cartesian-Analytical", linewidth=2)
+    plot!(p2, orbit_result.times / 3600, pos_errors_ks_analytical / pos_error_scale, label="KS-Analytical", linewidth=2)
+
+    # Velocity errors plot
+    vel_error_ylabel = vel_error_order == 0 ? "Error (m/s)" : "Error (1e$(vel_error_order) m/s)"
+    p3 = plot(title="Velocity Errors (e=0.9)", xlabel="Time (h)", ylabel=vel_error_ylabel)
+    plot!(p3, orbit_result.times / 3600, vel_errors_cart_ks / vel_error_scale, label="Cartesian-KS", linewidth=2)
+    plot!(p3, orbit_result.times / 3600, vel_errors_cart_analytical / vel_error_scale, label="Cartesian-Analytical", linewidth=2)
+    plot!(p3, orbit_result.times / 3600, vel_errors_ks_analytical / vel_error_scale, label="KS-Analytical", linewidth=2)
 
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
     savefig(p_combined, "figs/dynamics_comparison.png")

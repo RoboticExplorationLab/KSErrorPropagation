@@ -146,7 +146,13 @@ function propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, G
 
     cb = VectorContinuousCallback(condition!, affect!, length(times))
 
-    prob = ODEProblem(ks_gravity!, ks_state_full_0, (times[1], times[end]), GM)
+    # Estimate fictitious time span
+    y_vec_0 = ks_state_augmented_0[1:4]
+    r_vec_norm_0 = y_vec_0'y_vec_0
+    s_0 = 0.0
+    s_end = (times[end] - times[1]) / r_vec_norm_0 # * 2.0  # Add margin
+
+    prob = ODEProblem(ks_gravity!, ks_state_full_0, (s_0, s_end), GM)
     sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
 
     # Convert KS states to Cartesian

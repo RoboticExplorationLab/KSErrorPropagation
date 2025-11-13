@@ -7,6 +7,11 @@ Install dependencies:
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
+Update package resolution (resolve dependencies):
+```bash
+julia --project=. -e 'using Pkg; Pkg.resolve()'
+```
+
 Run scripts:
 ```bash
 julia --project=. julia_script.jl
