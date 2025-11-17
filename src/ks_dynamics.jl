@@ -60,7 +60,7 @@ function ks_gravity!(ks_state_full_prime, ks_state_full, p, s)
 end
 
 """
-    propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM)
+    propagate_ks_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
 
 Propagate KS state with time tracking, handling the transformation between
 real time t and fictitious time s where dt = r * ds and r = y'y.
@@ -76,7 +76,7 @@ real time t and fictitious time s where dt = r * ds and r = y'y.
 - `ks_state_augmented_traj`: array of KS augmented states [y_vec; y_vec_prime; h] at each time
 - `t_traj`: array of times
 """
-function propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM)
+function propagate_ks_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
     # KS full state vector: [y_vec; y_vec_prime; h; t]
     ks_state_full_0 = [ks_state_augmented_0; times[1]]
 
@@ -116,7 +116,7 @@ function propagate_ks_keplerian_orbit(ks_state_augmented_0, times, sim_params, G
 end
 
 """
-    propagate_ks_keplerian_orbit_scaled(ks_state_augmented_0, times, sim_params, GM, a)
+    propagate_ks_keplerian_dynamics_scaled(ks_state_augmented_0, times, sim_params, GM, a)
 
 Propagate KS state with time tracking, handling the transformation between
 real time t and fictitious time s where dt = r * ds and r = y'y.
@@ -133,7 +133,7 @@ real time t and fictitious time s where dt = r * ds and r = y'y.
 - `ks_state_augmented_traj`: array of KS augmented states [y_vec; y_vec_prime; h] at each time
 - `t_traj`: array of times
 """
-function propagate_ks_keplerian_orbit_scaled(ks_state_augmented_0, times, sim_params, GM, d_scale, t_scale)
+function propagate_ks_keplerian_dynamics_scaled(ks_state_augmented_0, times, sim_params, GM, d_scale, t_scale)
     # Normalize via Cartesian conversion (simpler than direct KS normalization)
     x_vec_0 = state_ks_to_cartesian(ks_state_augmented_0[1:8])
     r_vec_0_scaled = x_vec_0[1:3] / d_scale
@@ -214,7 +214,7 @@ function propagate_ks_keplerian_orbit_scaled(ks_state_augmented_0, times, sim_pa
 end
 
 """
-    propagate_ks_analytical_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM)
+    propagate_ks_analytical_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
 
 Analytical solution for KS Keplerian orbit propagation.
 The KS equation y'' = -h/2 * y has a closed-form solution.
@@ -230,7 +230,7 @@ The KS equation y'' = -h/2 * y has a closed-form solution.
 - `ks_state_augmented_traj`: array of KS augmented states [y_vec; y_vec_prime; h] at each time
 - `t_traj`: array of times
 """
-function propagate_ks_analytical_keplerian_orbit(ks_state_augmented_0, times, sim_params, GM)
+function propagate_ks_analytical_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
     # Extract initial conditions
     y_vec_0 = ks_state_augmented_0[1:4]
     y_vec_prime_0 = ks_state_augmented_0[5:8]

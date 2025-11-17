@@ -128,18 +128,18 @@ function test_orbit(orbit_name, a, e, i, omega, RAAN, M, GM)
 
     # Propagate in Cartesian coordinates
     println("\nPropagating in Cartesian coordinates...")
-    x_vec_traj, t_traj_cart = propagate_cartesian_keplerian_orbit(x_vec_0, times, SIM_PARAMS, GM)
+    x_vec_traj, t_traj_cart = propagate_cartesian_keplerian_dynamics(x_vec_0, times, SIM_PARAMS, GM)
     println("  Completed: ", length(x_vec_traj), " states")
 
     # Propagate in KS coordinates
     println("Propagating in KS coordinates...")
-    x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_analytical_keplerian_orbit(ks_state_augmented_0, times, SIM_PARAMS, GM)
+    x_vec_traj_ks, ks_state_augmented_traj, t_traj_ks = propagate_ks_analytical_keplerian_dynamics(ks_state_augmented_0, times, SIM_PARAMS, GM)
     println("  Completed: ", length(ks_state_augmented_traj), " states")
 
     # Compute analytical solution
     println("Computing analytical solution...")
     oe_vec_0 = [a, e, i, RAAN, omega, M]
-    x_vec_traj_analytical = propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+    x_vec_traj_analytical = propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM)
     println("  Completed: ", length(x_vec_traj_analytical), " states")
 
     # Compare the time histories from Cartesian and KS propagations

@@ -49,7 +49,7 @@ function cartesian_gravity!(x_vec_dot, x_vec, p, t)
 end
 
 """
-    propagate_cartesian_keplerian_orbit(x_vec_0, times, sim_params, GM)
+    propagate_cartesian_keplerian_dynamics(x_vec_0, times, sim_params, GM)
 
 Propagate Cartesian state with time tracking.
 
@@ -63,7 +63,7 @@ Propagate Cartesian state with time tracking.
 - `x_vec_traj`: array of Cartesian states [r_vec; v_vec] at each time
 - `t_traj`: array of times
 """
-function propagate_cartesian_keplerian_orbit(x_vec_0, times, sim_params, GM)
+function propagate_cartesian_keplerian_dynamics(x_vec_0, times, sim_params, GM)
     prob = ODEProblem(cartesian_gravity!, x_vec_0, (times[1], times[end]), GM)
     sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, saveat=times)
     x_vec_traj = [sol.u[k] for k = 1:length(sol.u)]
@@ -72,7 +72,7 @@ function propagate_cartesian_keplerian_orbit(x_vec_0, times, sim_params, GM)
 end
 
 """
-    propagate_cartesian_keplerian_orbit_scaled(x_vec_0, times, sim_params, GM, a)
+    propagate_cartesian_keplerian_dynamics_scaled(x_vec_0, times, sim_params, GM, a)
 
 Propagate Cartesian state with time tracking using normalized coordinates.
 
@@ -87,7 +87,7 @@ Propagate Cartesian state with time tracking using normalized coordinates.
 - `x_vec_traj`: array of Cartesian states [r_vec; v_vec] at each time
 - `t_traj`: array of times
 """
-function propagate_cartesian_keplerian_orbit_scaled(x_vec_0, times, sim_params, GM, d_scale, t_scale)
+function propagate_cartesian_keplerian_dynamics_scaled(x_vec_0, times, sim_params, GM, d_scale, t_scale)
     # Normalize initial state
     r_vec_0_scaled = x_vec_0[1:3] / d_scale
     v_vec_0_scaled = x_vec_0[4:6] * t_scale / d_scale

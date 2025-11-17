@@ -5,7 +5,7 @@ Utility functions.
 using SatelliteDynamics
 
 """
-    propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+    propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM)
 
 Compute analytical Keplerian orbit solution at given times.
 
@@ -17,7 +17,7 @@ Compute analytical Keplerian orbit solution at given times.
 # Returns
 - `x_vec_traj_analytical`: array of Cartesian states [r_vec; v_vec] at each time
 """
-function propagate_analytical_keplerian_orbit(oe_vec_0, times, GM)
+function propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM)
     a, e, i, RAAN, omega, M_0 = oe_vec_0
     n = sqrt(GM / a^3)  # Mean motion
 
