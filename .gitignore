@@ -1,7 +1,11 @@
-.DS_Store
+# Compare
+compare/data/
 
 # Julia
 julia/Manifest.toml
 
 # Python
 python/**/__pycache__/
+
+# Miscellaneous
+.DS_Store
