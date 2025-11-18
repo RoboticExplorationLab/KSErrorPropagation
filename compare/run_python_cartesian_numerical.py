@@ -22,8 +22,8 @@ class SIM_PARAMS:
     rtol = 1e-13
 
 
-def run_python_numerical(times, a, e, mu, output_file):
-    """Run Python numerical solution and save results to CSV."""
+def run_python_cartesian_numerical(times, a, e, mu, output_file):
+    """Run Python cartesian numerical solution and save results to CSV."""
     print(f"Running Python propagate_cartesian_keplerian_dynamics()...")
 
     # Initial orbital elements: [a, e, i, RAAN, omega, M_0]
@@ -54,7 +54,7 @@ def main():
     """Main function to run Python numerical solution."""
     if len(sys.argv) != 6:
         print(
-            "Usage: python run_python_numerical.py <a> <e> <mu> <times_file> <output_file>"
+            "Usage: python run_python_cartesian_numerical.py <a> <e> <mu> <times_file> <output_file>"
         )
         sys.exit(1)
 
@@ -71,7 +71,7 @@ def main():
             times.append(float(line.strip()))
 
     # Run Python solution
-    run_python_numerical(times, a, e, mu, output_file)
+    run_python_cartesian_numerical(times, a, e, mu, output_file)
 
 
 if __name__ == "__main__":

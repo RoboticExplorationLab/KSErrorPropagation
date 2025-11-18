@@ -1,5 +1,5 @@
 """
-Compare Python and Julia numerical solutions from saved data files.
+Compare Python and Julia cartesian numerical solutions from saved data files.
 """
 
 import numpy as np
@@ -153,7 +153,7 @@ def main():
     ]
 
     print("=" * 80)
-    print("COMPARING PYTHON AND JULIA NUMERICAL SOLUTIONS")
+    print("COMPARING PYTHON AND JULIA CARTESIAN NUMERICAL SOLUTIONS")
     print("=" * 80)
 
     # Get data directory
@@ -171,24 +171,24 @@ def main():
 
         # File names in data directory
         python_file = os.path.join(
-            data_dir, f"results_python_numerical_{test_case['name']}.csv"
+            data_dir, f"results_python_cartesian_numerical_{test_case['name']}.csv"
         )
         julia_file = os.path.join(
-            data_dir, f"results_julia_numerical_{test_case['name']}.csv"
+            data_dir, f"results_julia_cartesian_numerical_{test_case['name']}.csv"
         )
         comparison_file = os.path.join(
-            data_dir, f"comparison_numerical_{test_case['name']}.json"
+            data_dir, f"comparison_cartesian_numerical_{test_case['name']}.json"
         )
 
         # Check if files exist
         if not os.path.exists(python_file):
             print(f"  Warning: Python results file not found: {python_file}")
-            print("  Run run_python_numerical.py first")
+            print("  Run run_python_cartesian_numerical.py first")
             continue
 
         if not os.path.exists(julia_file):
             print(f"  Warning: Julia results file not found: {julia_file}")
-            print("  Run run_julia_numerical.jl first")
+            print("  Run run_julia_cartesian_numerical.jl first")
             continue
 
         # Compare results
@@ -203,3 +203,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

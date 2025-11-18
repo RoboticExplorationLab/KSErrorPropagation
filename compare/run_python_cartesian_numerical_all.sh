@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run Julia numerical solution for all test cases
+# Run Python numerical solution for all test cases
 
 GM_EARTH=398600.0
 
@@ -8,7 +8,7 @@ declare -a test_cases=("circular:7000:0.0" "low_eccentricity:7000:0.1" "high_ecc
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 data_dir="$script_dir/data"
-julia_script="$script_dir/run_julia_numerical.jl"
+python_script="$script_dir/run_python_cartesian_numerical.py"
 
 # Ensure data directory exists
 mkdir -p "$data_dir"
@@ -36,10 +36,10 @@ with open('$times_file', 'w') as f:
         f.write(f'{t:.15e}\n')
 "
     
-    output_file="$data_dir/results_julia_numerical_${name}.csv"
+    output_file="$data_dir/results_python_cartesian_numerical_${name}.csv"
     
-    echo "Running Julia solution..."
-    julia "$julia_script" "$a" "$e" "$GM_EARTH" "$times_file" "$output_file"
+    echo "Running Python solution..."
+    python3 "$python_script" "$a" "$e" "$GM_EARTH" "$times_file" "$output_file"
     
     # Clean up times file
     rm -f "$times_file"
@@ -48,7 +48,7 @@ with open('$times_file', 'w') as f:
 done
 
 echo "============================================================"
-echo "ALL JULIA NUMERICAL SOLUTIONS COMPLETE"
+echo "ALL PYTHON NUMERICAL SOLUTIONS COMPLETE"
 echo "Results saved to: $data_dir"
 echo "============================================================"
 

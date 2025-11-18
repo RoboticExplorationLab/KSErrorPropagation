@@ -26,7 +26,7 @@ const SIM_PARAMS = (
 
 # Parse command-line arguments
 if length(ARGS) != 5
-    error("Usage: julia run_julia_numerical.jl <a> <e> <mu> <times_file> <output_file>")
+    error("Usage: julia run_julia_cartesian_numerical.jl <a> <e> <mu> <times_file> <output_file>")
 end
 
 a = parse(Float64, ARGS[1])
