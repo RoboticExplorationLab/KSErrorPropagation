@@ -7,8 +7,6 @@ import json
 import os
 
 
-
-
 def compare_results(python_file, julia_file, output_file, a, e, mu):
     """Compare the saved results from Python and Julia."""
     print(f"\nComparing results...")
@@ -129,7 +127,7 @@ def compare_results(python_file, julia_file, output_file, a, e, mu):
 
 def main():
     """Main function to compare saved results."""
-    GM_earth = 3.986e5  # km^3/s^2
+    GM_EARTH = 3.986e5  # km^3/s^2
 
     # Test cases
     test_cases = [
@@ -158,9 +156,7 @@ def main():
         # File names in data directory
         python_file = os.path.join(data_dir, f"results_python_{test_case['name']}.csv")
         julia_file = os.path.join(data_dir, f"results_julia_{test_case['name']}.csv")
-        comparison_file = os.path.join(
-            data_dir, f"comparison_{test_case['name']}.json"
-        )
+        comparison_file = os.path.join(data_dir, f"comparison_{test_case['name']}.json")
 
         # Check if files exist
         if not os.path.exists(python_file):
@@ -175,7 +171,7 @@ def main():
 
         # Compare results
         comparison = compare_results(
-            python_file, julia_file, comparison_file, a, e, GM_earth
+            python_file, julia_file, comparison_file, a, e, GM_EARTH
         )
 
     print(f"\n{'='*80}")

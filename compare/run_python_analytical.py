@@ -1,9 +1,8 @@
 """
-Run Python analytical_solution() from utils.py and save results to data/ directory.
+Run Python propagate_analytical_keplerian_dynamics() from utils.py and save results to data/ directory.
 """
 
 import numpy as np
-import pykep as pk
 import sys
 import os
 import csv
@@ -12,46 +11,29 @@ import csv
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(project_root, "python", "src"))
 
-from utils import analytical_solution
+from utils import propagate_analytical_keplerian_dynamics
 
 
 def run_python_solution(times, a, e, mu, output_file):
-    """Run Python analytical_solution() and save results to CSV."""
-    print(f"Running Python analytical_solution()...")
+    """Run Python propagate_analytical_keplerian_dynamics() and save results to CSV."""
+    print(f"Running Python propagate_analytical_keplerian_dynamics()...")
 
-    positions = []
-    velocities = []
-    times_actual = []
+    # Initial orbital elements: [a, e, i, RAAN, omega, M_0]
+    # Matching Julia's assumptions: i=0, RAAN=0, omega=0, M_0=0
+    oe_vec_0 = [a, e, 0.0, 0.0, 0.0, 0.0]
 
-    a_abs = abs(a) if a < 0 else a
-    el0 = [a_abs, e, 0.0, 0.0, 0.0, 0.0]
-    r0, v0 = pk.par2ic(el0, mu)
-    r0 = np.array(r0)
-    v0 = np.array(v0)
+    # Run function
+    x_vec_traj = propagate_analytical_keplerian_dynamics(oe_vec_0, times, mu)
 
-    for t in times:
-        try:
-            # Get position from actual function
-            x, y, z, r_vec, r_norm = analytical_solution(t, a, e, mu)
-
-            # Get velocity
-            rf, vf = pk.propagate_lagrangian(r0, v0, t, mu)
-
-            positions.append(r_vec)
-            velocities.append(np.array(vf))
-            times_actual.append(float(t))
-        except Exception as e:
-            print(f"  Error at t={t:.1f} s: {e}")
-            break
-
-    # Save to CSV: time, x, y, z, vx, vy, vz
+    # Save to CSV format: time, x, y, z, vx, vy, vz
     with open(output_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["time", "x", "y", "z", "vx", "vy", "vz"])
-        for i, t in enumerate(times_actual):
-            writer.writerow([t] + positions[i].tolist() + velocities[i].tolist())
+        for i, t in enumerate(times):
+            x = x_vec_traj[i]
+            writer.writerow([t, x[0], x[1], x[2], x[3], x[4], x[5]])
 
-    print(f"  Saved {len(positions)} states to {output_file}")
+    print(f"  Saved {len(x_vec_traj)} states to {output_file}")
 
 
 def main():

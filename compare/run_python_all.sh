@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run Python analytical solution for all test cases
 
-GM_earth=398600.0
+GM_EARTH=398600.0
 
 # Test cases
 declare -a test_cases=("circular:7000:0.0" "low_eccentricity:7000:0.1" "high_eccentricity:70000:0.9")
@@ -23,7 +23,7 @@ for test_case in "${test_cases[@]}"; do
     
     # Calculate orbital period and create times
     a_abs=$(echo "$a" | awk '{if ($1 < 0) print -$1; else print $1}')
-    T=$(python3 -c "import math; print(2 * math.pi * math.sqrt($a_abs**3 / $GM_earth))")
+    T=$(python3 -c "import math; print(2 * math.pi * math.sqrt($a_abs**3 / $GM_EARTH))")
     times_file="$data_dir/times_${name}.csv"
     
     # Generate times (2 orbital periods, 100 points)
@@ -39,7 +39,7 @@ with open('$times_file', 'w') as f:
     output_file="$data_dir/results_python_${name}.csv"
     
     echo "Running Python solution..."
-    python3 "$python_script" "$a" "$e" "$GM_earth" "$times_file" "$output_file"
+    python3 "$python_script" "$a" "$e" "$GM_EARTH" "$times_file" "$output_file"
     
     # Clean up times file
     rm -f "$times_file"

@@ -1,58 +1,55 @@
 import numpy as np
 import pykep as pk
+from pyorb.kepler import mean_to_eccentric
 
 
 from matplotlib.ticker import FuncFormatter
 
 
-def analytical_solution(t, a, e, mu, t0=0.0):
+def propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM):
     """
-    Analytical Keplerian propagation using pykep.propagate_lagrangian (like old notebook).
-    Uses pykep for OSCtoCART conversion and propagation.
-    Assumes i = 0, Ω = 0, ω = 0 and starts at periapsis at t = 0.
+    Compute analytical Keplerian orbit solution at given times.
 
     Parameters:
     -----------
-    t : float
-        Time (seconds)
-    a : float
-        Semi-major axis (km). Can be negative for hyperbolic orbits.
-    e : float
-        Eccentricity
-    mu : float
+    oe_vec_0 : list
+        Initial orbital elements [a, e, i, RAAN, omega, M]
+    times : list
+        Times to compute solution at
+    GM : float
         Gravitational parameter (km^3/s^2)
-    t0 : float
-        Initial time (default 0.0)
 
     Returns:
     --------
-    x, y, z, r_vec, r_vec_norm
+    x_vec_traj_analytical : numpy array
+        Cartesian states [r_vec; v_vec] at each time
     """
-    # Get initial state at periapsis (M=0) using pykep
-    # pykep can work with km units directly when mu is in km^3/s^2
-    a_abs = abs(a) if a < 0 else a
+    a, e, i, RAAN, omega, M_0 = oe_vec_0
 
-    # Initial orbital elements at periapsis: [a, e, i, RAAN, omega, M]
-    el0 = [a_abs, e, 0.0, 0.0, 0.0, 0.0]
+    # Mean motion calculation: use absolute value of a for hyperbolic orbits
+    n = np.sqrt(GM / np.abs(a) ** 3)  # Mean motion (always positive)
 
-    # Convert to initial Cartesian state (in km and km/s)
-    r0, v0 = pk.par2ic(el0, mu)
-    r0 = np.array(r0)  # km
-    v0 = np.array(v0)  # km/s
+    x_vec_traj_analytical = np.zeros((len(times), 6))
+    t_0 = times[0]  # Initial time reference
 
-    # Propagate from initial state to time t using pykep.propagate_lagrangian
-    # This function handles the Keplerian propagation correctly
-    rf, vf = pk.propagate_lagrangian(r0, v0, t, mu)
+    for idx, t in enumerate(times):
+        # Mean anomaly at time t: M(t) = M_0 + n*(t - t_0)
+        M_t = M_0 + n * (t - t_0)
 
-    # Results are already in km and km/s
-    r_vec_3d = np.array(rf)
+        # Wrap mean anomaly to [0, 2π) (matching Julia implementation)
+        M_t = np.mod(M_t, 2 * np.pi)
 
-    # Extract x, y, z coordinates
-    x, y, z = r_vec_3d
+        # Compute orbital elements at time t
+        oe_vec_t = [a, e, i, RAAN, omega, mean_to_eccentric(M_t, e, degrees=False)]
 
-    r_vec_norm = np.linalg.norm(r_vec_3d)
+        # Convert to Cartesian coordinates (analytical solution)
+        r_vec_t, v_vec_t = pk.par2ic(oe_vec_t, GM)
+        # Convert tuples to numpy arrays
+        r_vec_t = np.array(r_vec_t)
+        v_vec_t = np.array(v_vec_t)
+        x_vec_traj_analytical[idx, :] = np.concatenate([r_vec_t, v_vec_t])
 
-    return x, y, z, r_vec_3d, r_vec_norm
+    return x_vec_traj_analytical
 
 
 def r_vecs2several_quantities(r_vec):
@@ -120,3 +117,12 @@ def apply_scientific_tick_labels(ax, axis, arrays, decimals=1):
         ax.zaxis.set_major_formatter(formatter)
         base_label = ax.get_zlabel().split(" ($")[0]
         ax.set_zlabel(f"{base_label} ($\\times 10^{{{magnitude}}}$)")
+
+
+def rk4_integration(ode_system, state0, t0, dt):
+    """RK4 integration of the ODE system"""
+    k1 = ode_system(t0, state0)
+    k2 = ode_system(t0 + dt / 2, state0 + dt / 2 * k1)
+    k3 = ode_system(t0 + dt / 2, state0 + dt / 2 * k2)
+    k4 = ode_system(t0 + dt, state0 + dt * k3)
+    return state0 + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
