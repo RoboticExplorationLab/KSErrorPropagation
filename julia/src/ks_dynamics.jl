@@ -214,6 +214,37 @@ function propagate_ks_keplerian_dynamics_scaled(ks_state_augmented_0, times, sim
 end
 
 """
+    ks_A_matrix(h)
+
+Compute the A matrix for the KS equation.
+
+# Arguments
+- `h`: energy parameter
+
+# Returns
+- `A`: A matrix
+"""
+function ks_A_matrix(h)
+    return [zeros(4, 4) I(4); -0.5 * h * I(4) zeros(4, 4)]
+end
+
+"""
+    ks_stm(h, s)
+
+Compute the STM for the KS equation.
+
+# Arguments
+- `h`: energy parameter
+- `s`: fictitious time
+
+# Returns
+- `Φ`: STM
+"""
+function ks_stm(h, s)
+    return exp(ks_A_matrix(h) * s)
+end
+
+"""
     propagate_ks_analytical_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
 
 Analytical solution for KS Keplerian orbit propagation.
@@ -231,154 +262,143 @@ The KS equation y'' = -h/2 * y has a closed-form solution.
 - `t_traj`: array of times
 """
 function propagate_ks_analytical_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
-    # Extract initial conditions
+    # Extract initial KS state components
     y_vec_0 = ks_state_augmented_0[1:4]
     y_vec_prime_0 = ks_state_augmented_0[5:8]
-
-    # Energy is constant (use provided h or recompute for consistency)
     h = ks_state_augmented_0[9]
 
     # Pre-allocate trajectory storage
     ks_state_augmented_traj = [zeros(9) for k = 1:length(times)]
+    ks_state_augmented_traj[1] .= ks_state_augmented_0
     t_traj = zeros(length(times))
-
-    # Set initial state
-    ks_state_augmented_traj[1] = [y_vec_0; y_vec_prime_0; h]
     t_traj[1] = times[1]
 
-    # Analytical solution depends on sign of h
-    if h > 0
-        # Elliptic case: use STM to propagate [y; y'; t] forward in s
-        ω = sqrt(h / 2.0)
-        I4 = Matrix{Float64}(I, 4, 4)
+    # Initialize augmented state: z_aug = [y; y'; t]
+    z_aug = [y_vec_0; y_vec_prime_0; times[1]]
+    s = 0.0
+    k_out = 1  # Index for output times
 
-        # Initialize augmented state: z_aug = [y; y'; t]
-        z_aug = [y_vec_0; y_vec_prime_0; times[1]]
-        s = 0.0
-        k_out = 1  # Index for output times
+    # Maximum step size in s (adaptive based on radius)
+    max_Δs = Inf
 
-        # Maximum step size in s (adaptive based on radius)
-        max_Δs = Inf
+    while k_out < length(times)
+        t_target = times[k_out+1]
 
-        while k_out < length(times)
-            t_target = times[k_out+1]
+        # Extract current state
+        y_vec = z_aug[1:4]
+        y_vec_prime = z_aug[5:8]
+        t_current = z_aug[9]
 
-            # Extract current state
-            y_vec = z_aug[1:4]
-            y_vec_prime = z_aug[5:8]
-            t_current = z_aug[9]
+        # Compute current radius for adaptive step sizing
+        r_current = y_vec'y_vec
 
-            # Compute current radius for adaptive step sizing
-            r_current = y_vec'y_vec
-
-            # Estimate step size in s to approach target time
-            # dt/ds = r, so Δs ≈ (t_target - t_current) / r
-            if t_target > t_current
-                Δs_estimate = (t_target - t_current) / max(r_current, 1e-10)
-                # Limit step size for stability (especially near periapsis)
-                Δs = min(Δs_estimate, max_Δs, 0.1 / max(ω, 1e-10))
-            else
-                # Shouldn't happen if times are increasing, but handle it
-                break
-            end
-
-            # Build 9×9 STM for step Δs
-            # For KS state: [y; y'] propagates via 8×8 block
-            cos_ωΔs = cos(ω * Δs)
-            sin_ωΔs = sin(ω * Δs)
-            cos_2ωΔs = cos(2 * ω * Δs)
-            sin_2ωΔs = sin(2 * ω * Δs)
-
-            # 8×8 STM for [y; y']
-            Φ_88 = [cos_ωΔs*I4 (1/ω)*sin_ωΔs*I4;
-                -ω*sin_ωΔs*I4 cos_ωΔs*I4]
-
-            # Compute time increment Δt(Δs) from current state
-            # Coefficients computed from current y and y'
-            y_dot_y = y_vec'y_vec
-            y_dot_yp = y_vec'y_vec_prime
-            yp_dot_yp = y_vec_prime'y_vec_prime
-
-            A = 0.5 * (y_dot_y + yp_dot_yp / (ω^2))
-            B = 0.5 * (y_dot_y - yp_dot_yp / (ω^2))
-            C = y_dot_yp / ω
-
-            # Time increment: Δt(Δs) = A*Δs + (B/(2ω))*sin(2ωΔs) - (C/(2ω))*(cos(2ωΔs) - 1)
-            Δt = A * Δs + (B / (2 * ω)) * sin_2ωΔs - (C / (2 * ω)) * (cos_2ωΔs - 1.0)
-
-            # Build full 9×9 STM
-            Φ = zeros(9, 9)
-            Φ[1:8, 1:8] = Φ_88
-            Φ[9, 9] = 1.0  # t propagates as t_new = t + Δt
-
-            # Apply STM: z_aug_new = Φ * z_aug (but t needs special handling)
-            z_aug_new = Φ * z_aug
-            z_aug_new[9] = t_current + Δt  # Update time explicitly
-
-            # Check if we've crossed the target time
-            if z_aug_new[9] >= t_target
-                # Compute exact state at t_target using analytical solution
-                # We need to find Δs_exact such that t(s + Δs_exact) = t_target
-                # Use Newton's method with good initial guess (the Δs we just used)
-                Δs_exact = Δs
-                for iter = 1:10
-                    # Compute time at s + Δs_exact
-                    cos_ωΔs_exact = cos(ω * Δs_exact)
-                    sin_ωΔs_exact = sin(ω * Δs_exact)
-                    cos_2ωΔs_exact = cos(2 * ω * Δs_exact)
-                    sin_2ωΔs_exact = sin(2 * ω * Δs_exact)
-
-                    Δt_exact = A * Δs_exact + (B / (2 * ω)) * sin_2ωΔs_exact - (C / (2 * ω)) * (cos_2ωΔs_exact - 1.0)
-                    t_at_s_plus_ds = t_current + Δt_exact
-
-                    residual = t_at_s_plus_ds - t_target
-                    if abs(residual) < 1e-12
-                        break
-                    end
-
-                    # Derivative: dt/ds = r(s + Δs_exact)
-                    # Compute state at s + Δs_exact
-                    y_vec_at_s_plus_ds = y_vec * cos_ωΔs_exact + (y_vec_prime / ω) * sin_ωΔs_exact
-                    r_at_s_plus_ds = y_vec_at_s_plus_ds'y_vec_at_s_plus_ds
-
-                    if abs(r_at_s_plus_ds) < 1e-15
-                        break
-                    end
-
-                    Δs_exact = Δs_exact - residual / r_at_s_plus_ds
-                    Δs_exact = clamp(Δs_exact, 0.0, Δs * 1.1)  # Keep it reasonable
-                end
-
-                # Compute exact state at s + Δs_exact
-                cos_ωΔs_exact = cos(ω * Δs_exact)
-                sin_ωΔs_exact = sin(ω * Δs_exact)
-                y_vec_exact = y_vec * cos_ωΔs_exact + (y_vec_prime / ω) * sin_ωΔs_exact
-                y_vec_prime_exact = -y_vec * ω * sin_ωΔs_exact + y_vec_prime * cos_ωΔs_exact
-
-                # Save exact state at target time
-                k_out += 1
-                ks_state_augmented_traj[k_out] = [y_vec_exact; y_vec_prime_exact; h]
-                t_traj[k_out] = t_target
-
-                # Update state for next iteration (use the exact state)
-                z_aug = [y_vec_exact; y_vec_prime_exact; t_target]
-                s += Δs_exact
-            else
-                # Haven't reached target yet, continue propagating
-                z_aug = z_aug_new
-                s += Δs
-            end
-
-            # Adaptive step size: reduce if radius is very small (near periapsis)
-            if r_current < 1e6  # Small radius threshold
-                max_Δs = 0.01 / max(ω, 1e-10)
-            else
-                max_Δs = 0.1 / max(ω, 1e-10)
-            end
+        # Estimate step size in s to approach target time
+        # dt/ds = r, so Δs ≈ (t_target - t_current) / r
+        if t_target > t_current
+            Δs_estimate = (t_target - t_current) / max(r_current, 1e-10)
+            # Limit step size for stability (especially near periapsis)
+            # Use h to compute step size limit: ω = sqrt(h/2), so limit based on h
+            ω_for_step = sqrt(max(h / 2.0, 1e-20))
+            Δs = min(Δs_estimate, max_Δs, 0.1 / ω_for_step)
+        else
+            # Shouldn't happen if times are increasing, but handle it
+            break
         end
 
-    else
-        error("Only elliptic case (h > 0) is currently implemented with STM approach")
+        # Use ks_stm to propagate [y; y'] forward in s
+        Φ_88 = ks_stm(h, Δs)
+        ks_state_new = Φ_88 * [y_vec; y_vec_prime]
+        y_vec_new = ks_state_new[1:4]
+        y_vec_prime_new = ks_state_new[5:8]
+
+        # Compute time increment Δt(Δs) from current state
+        # Coefficients computed from current y and y'
+        y_dot_y = y_vec'y_vec
+        y_dot_yp = y_vec'y_vec_prime
+        yp_dot_yp = y_vec_prime'y_vec_prime
+
+        # ω = sqrt(h/2) for time increment calculation
+        ω = sqrt(h / 2.0)
+        ω_sq = h / 2.0
+        Φ_88 = ks_stm(h, Δs)
+
+        # A: average of radius and scaled velocity norm
+        # B: difference term
+        # C: cross term between position and velocity
+        A = 0.5 * (y_dot_y + yp_dot_yp / ω_sq)
+        B = 0.5 * (y_dot_y - yp_dot_yp / ω_sq)
+        C = y_dot_yp / ω
+
+        # Time increment: Δt(Δs) = A*Δs + (B/(2ω))*sin(2ωΔs) - (C/(2ω))*(cos(2ωΔs) - 1)
+        cos_2ωΔs = cos(2 * ω * Δs)
+        sin_2ωΔs = sin(2 * ω * Δs)
+        Δt = A * Δs + (B / (2 * ω)) * sin_2ωΔs - (C / (2 * ω)) * (cos_2ωΔs - 1.0)
+
+        # Update augmented state: [y; y'; t]
+        z_aug_new = [y_vec_new; y_vec_prime_new; t_current + Δt]
+
+        # Check if we've crossed the target time
+        if z_aug_new[9] >= t_target
+            # Compute exact state at t_target using analytical solution
+            # We need to find Δs_exact such that t(s + Δs_exact) = t_target
+            # Use Newton's method with good initial guess (the Δs we just used)
+            Δs_exact = Δs
+            for iter = 1:10
+                # Compute time at s + Δs_exact
+                cos_2ωΔs_exact = cos(2 * ω * Δs_exact)
+                sin_2ωΔs_exact = sin(2 * ω * Δs_exact)
+
+                Δt_exact = A * Δs_exact + (B / (2 * ω)) * sin_2ωΔs_exact - (C / (2 * ω)) * (cos_2ωΔs_exact - 1.0)
+                t_at_s_plus_ds = t_current + Δt_exact
+
+                residual = t_at_s_plus_ds - t_target
+                if abs(residual) < 1e-12
+                    break
+                end
+
+                # Derivative: dt/ds = r(s + Δs_exact)
+                # Compute state at s + Δs_exact using ks_stm
+                Φ_88_exact = ks_stm(h, Δs_exact)
+                ks_state_at_s_plus_ds = Φ_88_exact * [y_vec; y_vec_prime]
+                y_vec_at_s_plus_ds = ks_state_at_s_plus_ds[1:4]
+                r_at_s_plus_ds = y_vec_at_s_plus_ds'y_vec_at_s_plus_ds
+
+                if abs(r_at_s_plus_ds) < 1e-15
+                    break
+                end
+
+                Δs_exact = Δs_exact - residual / r_at_s_plus_ds
+                Δs_exact = clamp(Δs_exact, 0.0, Δs * 1.1)  # Keep it reasonable
+            end
+
+            # Compute exact state at s + Δs_exact using ks_stm
+            Φ_88_exact = ks_stm(h, Δs_exact)
+            ks_state_exact = Φ_88_exact * [y_vec; y_vec_prime]
+            y_vec_exact = ks_state_exact[1:4]
+            y_vec_prime_exact = ks_state_exact[5:8]
+
+            # Save exact state at target time
+            k_out += 1
+            ks_state_augmented_traj[k_out] = [y_vec_exact; y_vec_prime_exact; h]
+            t_traj[k_out] = t_target
+
+            # Update state for next iteration (use the exact state)
+            z_aug = [y_vec_exact; y_vec_prime_exact; t_target]
+            s += Δs_exact
+        else
+            # Haven't reached target yet, continue propagating
+            z_aug = z_aug_new
+            s += Δs
+        end
+
+        # Adaptive step size: reduce if radius is very small (near periapsis)
+        # Use h to compute step size limit: ω = sqrt(h/2)
+        ω_for_adaptive = sqrt(max(h / 2.0, 1e-20))
+        if r_current < 1e6  # Small radius threshold
+            max_Δs = 0.01 / ω_for_adaptive
+        else
+            max_Δs = 0.1 / ω_for_adaptive
+        end
     end
 
     # Convert KS states to Cartesian
