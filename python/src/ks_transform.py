@@ -68,7 +68,8 @@ def velocity_ks_to_cartesian(y_vec, y_vec_prime):
     Transform Kustaanheimo-Stiefel velocity to Cartesian velocity.
     Given 4-vectors y_vec and y_vec_prime, return the 3-vector cartesian velocity.
     """
-    return ((2.0 / y_vec.T @ y_vec) * (L(y_vec) @ y_vec_prime))[:3]
+    y_vec_norm_sq = y_vec @ y_vec  # Use @ for 1D arrays instead of .T @
+    return ((2.0 / y_vec_norm_sq) * (L(y_vec) @ y_vec_prime))[:3]
 
 
 def state_ks_to_cartesian(ks_state):
@@ -97,4 +98,6 @@ def energy_ks(y_vec, y_vec_prime, GM):
     """
     Compute the KS energy parameter h from KS position and velocity.
     """
-    return (GM - 2 * (y_vec_prime.T @ y_vec_prime)) / (y_vec.T @ y_vec)
+    y_vec_norm_sq = y_vec @ y_vec  # Use @ for 1D arrays instead of .T @
+    y_vec_prime_norm_sq = y_vec_prime @ y_vec_prime
+    return (GM - 2 * y_vec_prime_norm_sq) / y_vec_norm_sq
