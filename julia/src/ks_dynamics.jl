@@ -765,11 +765,16 @@ function propagate_ks_perturbed_relative_dynamics(x_vec_chief_0, x_vec_deputy_0,
         h_prime_drag = 0.0
 
         if v_vec_rel_norm >= 1e-6
+            # # Use NRLMSISE-00 atmospheric density model
             # Extract primal values for SatelliteDynamics functions that don't support Dual types
-            r_vec_primal = ForwardDiff.value.(r_vec)
-            r_ecef = SD.sECItoECEF(epoch, r_vec_primal)
-            geod = SD.sECEFtoGEOD(r_ecef; use_degrees=false)
-            rho = SD.density_nrlmsise00(epoch, geod; use_degrees=false)
+            # r_vec_primal = ForwardDiff.value.(r_vec)
+            # r_ecef = SD.sECItoECEF(epoch, r_vec_primal)
+            # geod = SD.sECEFtoGEOD(r_ecef; use_degrees=false)
+            # rho = SD.density_nrlmsise00(epoch, geod; use_degrees=false)
+
+            # Use Harris-Priester atmospheric density model
+            rho = SD.density_harris_priester(epoch, r_vec)
+
             a_drag = -0.5 * (CD * A / m) * rho * v_vec_rel_norm * v_vec_rel
             y_vec_pprime_drag = (y_vec'y_vec / 2.0) * (L(y_vec)' * [a_drag; 0.0])
             h_prime_drag = -2 * y_vec_prime' * L(y_vec)' * [a_drag; 0.0]

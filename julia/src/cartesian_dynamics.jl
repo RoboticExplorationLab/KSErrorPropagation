@@ -177,13 +177,16 @@ function cartesian_drag_perturbation(x_vec, t, epoch, OMEGA_EARTH, CD, A, m)
         return zeros(3)
     end
 
-    # Atmospheric density using NRLMSISE-00 model
-    # Convert ECI position to ECEF (accounting for Earth's rotation)
-    r_ecef = SD.sECItoECEF(epoch, r_vec)
-    # Convert ECEF to geodetic coordinates [latitude, longitude, altitude]
-    geod = SD.sECEFtoGEOD(r_ecef; use_degrees=false)
-    # density_nrlmsise00 requires Epoch and geodetic coordinates [lat, lon, alt]
-    rho = SD.density_nrlmsise00(epoch, geod; use_degrees=false)
+    # # Use NRLMSISE-00 atmospheric density model
+    # # Convert ECI position to ECEF (accounting for Earth's rotation)
+    # r_ecef = SD.sECItoECEF(epoch, r_vec)
+    # # Convert ECEF to geodetic coordinates [latitude, longitude, altitude]
+    # geod = SD.sECEFtoGEOD(r_ecef; use_degrees=false)
+    # # density_nrlmsise00 requires Epoch and geodetic coordinates [lat, lon, alt]
+    # rho = SD.density_nrlmsise00(epoch, geod; use_degrees=false)
+
+    # Use Harris-Priester atmospheric density model
+    rho = SD.density_harris_priester(epoch, r_vec)
 
     # Drag acceleration: a = -0.5 * (CD * A / m) * ρ * v² * v̂
     a_drag = -0.5 * (CD * A / m) * rho * v_vec_rel_norm * v_vec_rel
