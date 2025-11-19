@@ -13,26 +13,28 @@ function L(y_vec)
     y1, y2, y3, y4 = y_vec
 
     return [y1 -y2 -y3 y4
-            y2 y1 -y4 -y3
-            y3 y4 y1 y2
-            y4 -y3 y2 -y1]
+        y2 y1 -y4 -y3
+        y3 y4 y1 y2
+        y4 -y3 y2 -y1]
+end
+
+""" `R(y_vec)`
+Given a 4-vector `y_vec`, corresponding to a KS position,
+return the Right multiply Matrix R(y_vec) where col(r_vec,0) = R(y_vec)y_vec.
+"""
+function R(y_vec)
+    y1, y2, y3, y4 = y_vec
+
+    return [y1 y2 y3 -y4
+        y2 -y1 y4 y3
+        y3 -y4 -y1 -y2
+        y4 y3 -y2 y1]
 end
 
 """ `position_cartesian_to_ks(r_vec)`
 Given a 3-vector `r_vec`, corresponding to an cartesian position,
 return the ks-transformed 4-vector `y_vec`.
 """
-# This approach might break
-# function position_cartesian_to_ks(r_vec)
-#     r1, r2, r3 = r_vec
-#     r_norm = sqrt(r_vec'r_vec)
-
-#     y1 = 0.0
-#     y4 = sqrt(0.5 * (r_norm + r1) - y1^2)
-#     y2 = (r2 * y4 + r3 * y1) / (r_norm + r1)
-#     y3 = (r3 * y1 - r2 * y4) / (r_norm + r1)
-#     return [y1, y2, y3, y4]
-# end
 function position_cartesian_to_ks(r_vec)
     r1, r2, r3 = r_vec
     r_vec_norm = norm(r_vec)
@@ -58,17 +60,8 @@ end
 Given a 4-vector `y_vec`, corresponding to a KS position,
 return the cartesian 3-vector `r_vec`.
 """
-# function position_ks_to_cartesian(y_vec)
-#     y1, y2, y3, y4 = y_vec
-
-#     r1 = y1^2 - y2^2 - y3^2 + y4^2
-#     r2 = 2.0 * (y1 * y2 - y3 * y4)
-#     r3 = 2.0 * (y1 * y3 + y2 * y4)
-
-#     return [r1, r2, r3]
-# end
 function position_ks_to_cartesian(y_vec)
-    return (L(y_vec) * y_vec)[1:3]
+    return (L(y_vec)*y_vec)[1:3]
 end
 
 """ `velocity_cartesian_to_ks(y_vec, v_vec)`
@@ -94,19 +87,8 @@ end
 Given 4-vectors `y_vec` and `y_vec_prime`, corresponding to the ks transformed
 position and velocity, respectively, return the 3-vector cartesian velocity `x`.
 """
-# function velocity_ks_to_cartesian(y_vec, y_vec_prime)
-#     y1, y2, y3, y4 = y_vec
-#     y1_prime, y2_prime, y3_prime, y4_prime = y_vec_prime
-#     yTy = y'y
-
-#     v1 = (2.0 / yTy) * (y1 * y1_prime - y2 * y2_prime - y3 * y3_prime + y4 * y4_prime)
-#     v2 = (2.0 / yTy) * (y2 * y1_prime + y1 * y2_prime - y4 * y3_prime - y3 * y4_prime)
-#     v3 = (2.0 / yTy) * (y3 * y1_prime + y4 * y2_prime + y1 * y3_prime + y2 * y4_prime)
-
-#     return [v1, v2, v3]
-# end
 function velocity_ks_to_cartesian(y_vec, y_vec_prime)
-    return ((2.0 / y_vec'y_vec) * (L(y_vec) * y_vec_prime))[1:3]
+    return ((2.0/y_vec'y_vec)*(L(y_vec)*y_vec_prime))[1:3]
 end
 
 """ `state_ks_to_cartesian(ks_state)`
@@ -142,3 +124,55 @@ function energy_ks(y_vec, y_vec_prime, GM)
     return (GM - 2 * (y_vec_prime'y_vec_prime)) / (y_vec'y_vec)
 end
 
+""" `position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false)`
+Given a 3-vector `r_vec`, corresponding to a cartesian position, return the 4-vector `y_vec` that minimizes the distance between `y_vec` and `y_vec_near` subject to the constraint that `col(r_vec,0) = L(y_vec)y_vec`.
+"""
+function position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false)
+    # KKT matrix
+    function kkt_matrix(y_vec, λ)
+        H = I(4) .+ 2R(λ)'
+        A = 2L(y_vec)
+        return [H A';
+            A zeros(4, 4)]
+    end
+
+    # Right-hand side vector
+    function rhs(r_vec, y_vec_near, y_vec, λ)
+        b1 = -((y_vec .- y_vec_near) .+ (2L(y_vec)'λ))
+        b2 = -(L(y_vec) * y_vec .- [r_vec; 0])
+        b = [b1; b2]
+        return b
+    end
+
+    z = [y_vec_near; zeros(4)]
+    i = 0
+    while i < max_iter
+        i += 1
+        A = kkt_matrix(z[1:4], z[5:8])
+        b = rhs(r_vec, y_vec_near, z[1:4], z[5:8])
+        Δz_vec = A \ b
+        z += Δz_vec
+        if norm(Δz_vec) < tol
+            break
+        end
+    end
+
+    if return_verbose
+        return z, i
+    end
+
+    return z[1:4]
+end
+
+""" `state_cartesian_to_ks_via_newton_method(x_state; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100)`
+Given a 6-vector `x_state = [r_vec, v_vec]`, corresponding to a cartesian state, return the 8-vector `ks_state = [y_vec, y_vec_prime]` that minimizes the distance between `y_vec` and `y_vec_near` subject to the constraint that `col(r_vec,0) = L(y_vec)y_vec`.
+"""
+function state_cartesian_to_ks_via_newton_method(x_state; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100)
+    r_vec = x_state[1:3]
+    v_vec = x_state[4:6]
+
+    y_vec = position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=y_vec_near, tol=tol, max_iter=max_iter)
+    y_vec_prime = velocity_cartesian_to_ks(y_vec, v_vec)
+
+    return [y_vec; y_vec_prime]
+end

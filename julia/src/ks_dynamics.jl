@@ -4,6 +4,7 @@ KS (Kustaanheimo-Stiefel) dynamics with gravity only (no J2, no drag).
 
 using LinearAlgebra
 using DifferentialEquations
+using ForwardDiff
 
 include("ks_transform.jl")
 include("cartesian_dynamics.jl")
@@ -225,7 +226,7 @@ Compute the A matrix for the KS equation.
 - `A`: A matrix
 """
 function ks_A_matrix(h)
-    return [zeros(4, 4) I(4); -0.5 * h * I(4) zeros(4, 4)]
+    return [zeros(4, 4) I(4); -0.5*h*I(4) zeros(4, 4)]
 end
 
 """
@@ -553,4 +554,144 @@ function propagate_ks_perturbed_dynamics(ks_state_augmented_0, times, sim_params
     # Convert KS states to Cartesian
     x_vec_traj_ks = [state_ks_to_cartesian(ks_state_augmented_traj[k][1:8]) for k = 1:length(times)]
     return x_vec_traj_ks, ks_state_augmented_traj, t_traj
+end
+
+"""
+    propagate_ks_keplerian_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, sim_params, GM)
+
+Propagate KS relative state with time tracking using Keplerian relative dynamics.
+
+# Arguments
+- `x_vec_chief_0`: initial Cartesian state of chief [r_vec; v_vec]
+- `x_vec_deputy_0`: initial Cartesian state of deputy [r_vec; v_vec]
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_chief_ks`: array of Cartesian states of chief [r_vec; v_vec] at each time
+- `x_vec_traj_rel_ks`: array of Cartesian relative states [r_vec; v_vec] at each time
+- `t_chief_traj`: array of times for chief
+- `t_deputy_traj`: array of times for deputy
+"""
+function propagate_ks_keplerian_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, sim_params, GM)
+    # Convert Cartesian states to KS states
+    ks_state_chief_0 = state_cartesian_to_ks_via_newton_method(x_vec_chief_0)
+    ks_state_deputy_0 = state_cartesian_to_ks_via_newton_method(x_vec_deputy_0; y_vec_near=ks_state_chief_0[1:4])
+    ks_state_rel_0 = ks_state_deputy_0 .- ks_state_chief_0
+
+    # Compute energy
+    h_chief_0 = energy_ks(ks_state_chief_0[1:4], ks_state_chief_0[5:8], GM)
+    h_deputy_0 = energy_ks(ks_state_deputy_0[1:4], ks_state_deputy_0[5:8], GM)
+    h_rel_0 = h_deputy_0 - h_chief_0
+
+    # ForwardDiff function for KS gravity
+    function f_function(ks_state_augmented)
+        y_vec = ks_state_augmented[1:4]
+        y_vec_prime = ks_state_augmented[5:8]
+        h = ks_state_augmented[9]
+
+        # Unperturbed KS dynamics (gravity only)
+        y_vec_pprime = (-h / 2.0) * y_vec
+        h_prime = 0.0
+
+        return [y_vec_prime; y_vec_pprime; h_prime]
+    end
+
+    # Keplerian relative dynamics
+    function ks_keplerian_relative_dynamics!(z_prime, z, p, s)
+        ks_state_agumented_chief = z[1:9]
+        ks_state_agumented_rel = z[10:18]
+
+        # Nonlinear dynamics for chief
+        ks_state_agumented_chief_prime = f_function(ks_state_agumented_chief)
+
+        # Linearize around chief position
+        ∂f∂ks_state_agumented_chief = ForwardDiff.jacobian(f_function, ks_state_agumented_chief)
+
+        # Linear relative dynamics
+        ks_state_agumented_rel_prime = ∂f∂ks_state_agumented_chief * ks_state_agumented_rel
+        ks_state_agumented_deputy = ks_state_agumented_chief .+ ks_state_agumented_rel
+
+        # Time derivatives
+        t_chief_prime = ks_state_agumented_chief[1:4]'ks_state_agumented_chief[1:4]
+        t_deputy_prime = ks_state_agumented_deputy[1:4]'ks_state_agumented_deputy[1:4]
+
+        z_prime .= [ks_state_agumented_chief_prime; ks_state_agumented_rel_prime; t_chief_prime; t_deputy_prime]
+    end
+
+    # Initial condition
+    z_0 = [ks_state_chief_0; h_chief_0; ks_state_rel_0; h_rel_0; times[1]; times[1]]
+
+    # Pre-allocate trajectory storage
+    ks_state_agumented_chief_traj = [zeros(9) for k = 1:length(times)]
+    ks_state_agumented_chief_traj[1] .= [ks_state_chief_0; h_chief_0]
+    ks_state_agumented_deputy_traj = [zeros(9) for k = 1:length(times)]
+    ks_state_agumented_deputy_traj[1] .= [ks_state_deputy_0; h_deputy_0]
+    t_deputy_traj = zeros(length(times))
+    t_deputy_traj[1] = times[1]
+    t_chief_traj = zeros(length(times))
+    t_chief_traj[1] = times[1]
+
+    ############################ CALLBACK FUNCTIONS ############################
+    # Callback to save states at specific real time points
+    # SOLVER HAS ISSUES WHEN RELATIVE STATE IS ZERO
+    function condition_separate!(out, z, s, sol)
+        t_chief_current = z[end-1]
+        t_deputy_current = z[end]
+        out .= [times .- t_chief_current; times .- t_deputy_current]
+    end
+
+    function affect_separate!(sol, idx)
+        if idx <= length(times)
+            # Chief timepoint
+            ks_state_agumented_chief_traj[idx] .= sol.u[1:9]
+            t_chief_traj[idx] = sol.u[end-1]
+        else
+            # Deputy timepoint
+            idx -= length(times)
+            ks_state_agumented_deputy_traj[idx] .= sol.u[10:18] .+ sol.u[1:9]
+            t_deputy_traj[idx] = sol.u[end]
+        end
+    end
+
+    function condition_together!(out, z, s, sol)
+        t_chief_current = z[end-1]
+        out .= times .- t_chief_current
+    end
+
+    function affect_together!(sol, idx)
+        if idx <= length(times)
+            # Chief timepoint
+            ks_state_agumented_chief_traj[idx] .= sol.u[1:9]
+            t_chief_traj[idx] = sol.u[end-1]
+
+            # Deputy timepoint
+            ks_state_agumented_deputy_traj[idx] .= sol.u[10:18] .+ sol.u[1:9]
+            t_deputy_traj[idx] = sol.u[end]
+        end
+    end
+
+    if norm(ks_state_rel_0[1:4]) > 1e-14
+        cb = VectorContinuousCallback(condition_separate!, affect_separate!, 2 * length(times))
+    else
+        cb = VectorContinuousCallback(condition_together!, affect_together!, length(times))
+    end
+    ############################################################################
+
+    # Estimate fictitious time span
+    r_vec_norm_0 = norm(x_vec_chief_0[1:3])
+    s_0 = 0.0
+    s_end = (times[end] - times[1]) / r_vec_norm_0
+
+    # Numerical solver
+    prob = ODEProblem(ks_keplerian_relative_dynamics!, z_0, (s_0, s_end))
+    sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
+
+    # Convert KS states to Cartesian
+    x_vec_traj_chief_ks = [state_ks_to_cartesian(ks_state_agumented_chief_traj[k][1:8]) for k = 1:length(times)]
+    x_vec_traj_deputy_ks = [state_ks_to_cartesian(ks_state_agumented_deputy_traj[k][1:8]) for k = 1:length(times)]
+    x_vec_traj_rel_ks = [x_vec_traj_deputy_ks[k][1:6] .- x_vec_traj_chief_ks[k][1:6] for k = 1:length(times)]
+
+    return x_vec_traj_chief_ks, x_vec_traj_rel_ks, t_chief_traj, t_deputy_traj
 end
