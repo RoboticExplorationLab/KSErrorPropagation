@@ -24,7 +24,7 @@ const R_EARTH = SD.R_EARTH
 # Define simulation parameters
 const SIM_PARAMS = (
     # Number of orbits to simulate
-    num_orbits=1.0,
+    num_orbits=5.0,
 
     # Sampling time (time step) in seconds
     sampling_time=30.0,  # seconds
@@ -51,7 +51,7 @@ M_c = deg2rad(0.0)  # Mean Anomaly
 
 # Deputy orbit parameters (offset by 0.001 degrees in mean anomaly and inclination)
 sma_d = sma_c  # same semi-major axis
-e_d = e_c  # same eccentricity
+e_d = e_c + 0.3  # offset by 0.3 in eccentricity
 i_d = i_c + deg2rad(0.001)  # offset by 0.001 degrees in inclination
 ω_d = ω_c  # same argument of periapsis
 Ω_d = Ω_c  # same RAAN
