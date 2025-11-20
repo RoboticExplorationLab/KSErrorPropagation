@@ -3,7 +3,9 @@ Cartesian dynamics with gravity only (no J2, no drag).
 """
 
 using LinearAlgebra
+using DifferentialEquations
 using SatelliteDynamics
+using ForwardDiff
 
 const SD = SatelliteDynamics
 
@@ -69,6 +71,63 @@ function propagate_cartesian_keplerian_dynamics(x_vec_0, times, sim_params, GM)
     x_vec_traj = [sol.u[k] for k = 1:length(sol.u)]
     t_traj = [sol.t[k] for k = 1:length(sol.t)]
     return x_vec_traj, t_traj
+end
+
+"""
+    propagate_cartesian_keplerian_dynamics_linearized(x_vec_0, P_0, times, sim_params, GM)
+
+Propagate state uncertainty using linearized Gaussian propagation in Cartesian coordinates.
+
+# Arguments
+- `x_vec_0`: initial mean state vector [r_vec; v_vec] (6-dimensional)
+- `P_0`: initial covariance matrix (6×6)
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_mean`: array of mean states at each time
+- `P_traj`: array of covariance matrices at each time
+- `times`: array of times
+"""
+function propagate_cartesian_keplerian_dynamics_linearized(x_vec_0, P_0, times, sim_params, GM)
+    # Propagate mean using existing function
+    x_vec_traj_mean, t_traj = propagate_cartesian_keplerian_dynamics(x_vec_0, times, sim_params, GM)
+
+    # Pre-allocate covariance trajectory
+    P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    P_traj[1] = copy(P_0)
+
+    # Propagate covariance at each time step
+    for t_idx in 2:length(times)
+        # Get current mean state
+        x_vec_current = x_vec_traj_mean[t_idx-1]
+        dt = times[t_idx] - times[t_idx-1]
+
+        # Compute state transition matrix F = ∂f/∂x
+        # f(x) gives the state derivative, so we need to integrate over dt
+        # For small dt, we can approximate: x(t+dt) ≈ x(t) + f(x(t)) * dt
+        # So F ≈ I + ∂f/∂x * dt
+
+        # Function to compute state at next time given current state
+        function state_transition_wrapper(x_input)
+            # Propagate from x_input to next time
+            times_small = [times[t_idx-1], times[t_idx]]
+            x_vec_traj_small, _ = propagate_cartesian_keplerian_dynamics(x_input, times_small, sim_params, GM)
+            return x_vec_traj_small[end]
+        end
+
+        # Compute Jacobian using ForwardDiff
+        F = ForwardDiff.jacobian(state_transition_wrapper, x_vec_current)
+
+        # Propagate covariance: P(t+dt) = F * P(t) * F'
+        P_traj[t_idx] = F * P_traj[t_idx-1] * F'
+
+        # Ensure symmetry
+        P_traj[t_idx] = (P_traj[t_idx] + P_traj[t_idx]') / 2.0
+    end
+
+    return x_vec_traj_mean, P_traj, t_traj
 end
 
 """

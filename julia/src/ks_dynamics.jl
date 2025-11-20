@@ -8,6 +8,7 @@ using ForwardDiff
 
 include("ks_transform.jl")
 include("cartesian_dynamics.jl")
+include("error_propagation.jl")
 
 """
     ks_gravity(ks_state_augmented, s, GM)
@@ -79,10 +80,14 @@ real time t and fictitious time s where dt = r * ds and r = y'y.
 """
 function propagate_ks_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
     # KS full state vector: [y_vec; y_vec_prime; h; t]
-    ks_state_full_0 = [ks_state_augmented_0; times[1]]
+    T_state = eltype(ks_state_augmented_0)
+    T_full = promote_type(T_state, Float64)
+    ks_state_full_0 = Vector{T_full}(undef, 10)
+    ks_state_full_0[1:9] = ks_state_augmented_0
+    ks_state_full_0[10] = times[1]
 
     # Pre-allocate trajectory storage
-    ks_state_augmented_traj = [zeros(9) for k = 1:length(times)]
+    ks_state_augmented_traj = [similar(ks_state_augmented_0) for k = 1:length(times)]
     ks_state_augmented_traj[1] .= ks_state_augmented_0
     t_traj = zeros(length(times))
     t_traj[1] = times[1]
@@ -111,9 +116,152 @@ function propagate_ks_keplerian_dynamics(ks_state_augmented_0, times, sim_params
     prob = ODEProblem(ks_gravity!, ks_state_full_0, (s_0, s_end), GM)
     sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
 
+    # Ensure final state is saved if callback didn't catch it
+    if t_traj[end] != times[end]
+        # Interpolate or use final solution state
+        ks_state_full_final = sol.u[end]
+        ks_state_augmented_traj[end] .= ks_state_full_final[1:9]
+        t_traj[end] = ks_state_full_final[10]
+    end
+
     # Convert KS states to Cartesian
     x_vec_traj_ks = [state_ks_to_cartesian(ks_state_augmented_traj[k][1:8]) for k = 1:length(times)]
     return x_vec_traj_ks, ks_state_augmented_traj, t_traj
+end
+
+"""
+    propagate_ks_keplerian_dynamics_linearized(x_vec_0, P_0, times, sim_params, GM)
+
+Propagate state uncertainty using linearized Gaussian propagation in KS coordinates.
+
+# Arguments
+- `x_vec_0`: initial mean state vector [r_vec; v_vec] (6-dimensional, Cartesian)
+- `P_0`: initial covariance matrix (6×6, Cartesian)
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_mean`: array of mean states at each time (Cartesian)
+- `P_traj`: array of covariance matrices at each time (Cartesian)
+- `times`: array of times
+"""
+function propagate_ks_keplerian_dynamics_linearized(x_vec_0, P_0, times, sim_params, GM)
+    # Convert initial state to KS
+    ks_state_0 = state_cartesian_to_ks(x_vec_0)
+    h_0 = energy_ks(ks_state_0[1:4], ks_state_0[5:8], GM)
+    ks_state_augmented_0 = [ks_state_0; h_0]
+
+    # Propagate mean in KS coordinates
+    x_vec_traj_mean_ks, ks_state_augmented_traj, t_traj = propagate_ks_keplerian_dynamics(ks_state_augmented_0, times, sim_params, GM)
+
+    # Pre-allocate covariance trajectory
+    P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    P_traj[1] = copy(P_0)
+    P_traj_ks = Vector{Matrix{Float64}}(undef, length(times))
+    P_traj_ks[1] = transform_covariance_cartesian_to_ks(P_0, x_vec_0)
+
+    # Propagate covariance at each time step
+    for t_idx in 2:length(times)
+        # Get current mean state in Cartesian
+        ks_state_augmented_current = ks_state_augmented_traj[t_idx-1]
+        dt = times[t_idx] - times[t_idx-1]
+
+        # Compute state transition matrix F in KS space (8x8, excluding energy)
+        # Function to compute state at next time given current state
+        function state_transition_wrapper(ks_state_input)
+            # Extract primal values if ks_state_input contains Dual types
+            ks_state_input_primal = ForwardDiff.value.(ks_state_input)
+
+            # Reconstruct augmented state (add energy)
+            h_input = energy_ks(ks_state_input_primal[1:4], ks_state_input_primal[5:8], GM)
+            ks_state_augmented_input = [ks_state_input_primal; h_input]
+
+            # Propagate from ks_state_augmented_input to next time
+            times_small = [times[t_idx-1], times[t_idx]]
+            _, ks_state_augmented_traj_small, _ = propagate_ks_keplerian_dynamics(ks_state_augmented_input, times_small, sim_params, GM)
+
+            # Return only the 8-element KS state (excluding energy)
+            return ks_state_augmented_traj_small[end][1:8]
+        end
+
+        # Get current KS state (8 elements, excluding energy)
+        ks_state_current = ks_state_augmented_current[1:8]
+
+        # Compute Jacobian using ForwardDiff (8x8)
+        F = ForwardDiff.jacobian(state_transition_wrapper, ks_state_current)
+
+        # Propagate covariance: P(t+dt) = F * P(t) * F'
+        P_traj_ks[t_idx] = F * P_traj_ks[t_idx-1] * F'
+
+        # Ensure symmetry
+        P_traj_ks[t_idx] = (P_traj_ks[t_idx] + P_traj_ks[t_idx]') / 2.0
+
+        # Convert covariance from KS to Cartesian
+        P_traj[t_idx] = transform_covariance_ks_to_cartesian(P_traj_ks[t_idx], ks_state_augmented_traj[t_idx][1:8])
+
+        # Ensure symmetry
+        P_traj[t_idx] = (P_traj[t_idx] + P_traj[t_idx]') / 2.0
+    end
+
+    return x_vec_traj_mean_ks, P_traj, t_traj
+end
+
+"""
+    propagate_ks_keplerian_dynamics_sigma_points(x_vec_0, P_0, times, sim_params, GM)
+
+Propagate state uncertainty using sigma point (Unscented Transform) method in KS coordinates.
+
+# Arguments
+- `x_vec_0`: initial mean state vector [r_vec; v_vec] (6-dimensional, Cartesian)
+- `P_0`: initial covariance matrix (6×6, Cartesian)
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_mean`: array of mean states at each time (Cartesian)
+- `P_traj`: array of covariance matrices at each time (Cartesian)
+- `times`: array of times
+"""
+function propagate_ks_keplerian_dynamics_sigma_points(x_vec_0, P_0, times, sim_params, GM)
+    # Generate sigma points in Cartesian space
+    sigma_points_0, weights_mean, weights_cov = generate_sigma_points(x_vec_0, P_0)
+    num_sigma_points = length(sigma_points_0)
+
+    # Pre-allocate storage for propagated sigma points at each time
+    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, length(times))
+    for t_idx in 1:length(times)
+        sigma_points_propagated[t_idx] = Vector{Vector{Float64}}(undef, num_sigma_points)
+    end
+
+    # Propagate each sigma point
+    println("  Propagating ", num_sigma_points, " sigma points...")
+    for (sp_idx, sigma_point_0) in enumerate(sigma_points_0)
+        # Transform to KS
+        ks_state_sp_0 = state_cartesian_to_ks_via_newton_method(sigma_point_0)
+        h_sp_0 = energy_ks(ks_state_sp_0[1:4], ks_state_sp_0[5:8], GM)
+        ks_state_augmented_sp_0 = [ks_state_sp_0; h_sp_0]
+
+        # Propagate through full nonlinear KS dynamics
+        x_vec_traj_sp, _, _ = propagate_ks_keplerian_dynamics(ks_state_augmented_sp_0, times, sim_params, GM)
+
+        # Store propagated states (already in Cartesian)
+        for t_idx in 1:length(times)
+            sigma_points_propagated[t_idx][sp_idx] = x_vec_traj_sp[t_idx]
+        end
+    end
+
+    # Reconstruct mean and covariance at each time
+    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    P_traj = Vector{Matrix{Float64}}(undef, length(times))
+
+    for t_idx in 1:length(times)
+        x_vec_traj_mean[t_idx], P_traj[t_idx] = reconstruct_from_sigma_points(
+            sigma_points_propagated[t_idx], weights_mean, weights_cov)
+    end
+
+    return x_vec_traj_mean, P_traj, times
 end
 
 """
@@ -694,6 +842,160 @@ function propagate_ks_keplerian_relative_dynamics(x_vec_chief_0, x_vec_deputy_0,
     x_vec_traj_rel_ks = [x_vec_traj_deputy_ks[k][1:6] .- x_vec_traj_chief_ks[k][1:6] for k = 1:length(times)]
 
     return x_vec_traj_chief_ks, x_vec_traj_rel_ks, t_chief_traj, t_deputy_traj
+end
+
+"""
+    propagate_ks_keplerian_relative_dynamics_sigma_points(x_vec_chief_0, x_vec_deputy_0, P_rel_0, times, sim_params, GM)
+
+Propagate relative state uncertainty using sigma point (Unscented Transform) method.
+
+# Arguments
+- `x_vec_chief_0`: initial Cartesian state of chief [r_vec; v_vec]
+- `x_vec_deputy_0`: initial Cartesian state of deputy [r_vec; v_vec]
+- `P_rel_0`: initial relative state covariance matrix (6×6 in Cartesian)
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_rel_mean`: array of mean relative states [r_vec; v_vec] at each time
+- `P_traj_rel`: array of relative state covariance matrices at each time
+- `t_traj`: array of times
+"""
+function propagate_ks_keplerian_relative_dynamics_sigma_points(x_vec_chief_0, x_vec_deputy_0, P_rel_0, times, sim_params, GM)
+    # Initial relative state mean
+    x_vec_rel_0 = x_vec_deputy_0 .- x_vec_chief_0
+
+    # Generate sigma points in Cartesian relative space
+    sigma_points_rel_0, weights_mean, weights_cov = generate_sigma_points(x_vec_rel_0, P_rel_0)
+    num_sigma_points = length(sigma_points_rel_0)
+
+    # Propagate chief separately (nonlinear, no uncertainty)
+    x_vec_traj_chief, _, t_traj_chief = propagate_cartesian_keplerian_dynamics(x_vec_chief_0, times, sim_params, GM)
+
+    # Pre-allocate storage for propagated sigma points at each time
+    sigma_points_rel_propagated = Vector{Vector{Vector{Float64}}}(undef, length(times))
+
+    # Propagate each sigma point
+    for sp_idx in 1:num_sigma_points
+        # Convert relative sigma point to absolute deputy state
+        x_vec_deputy_sp = x_vec_chief_0 .+ sigma_points_rel_0[sp_idx]
+
+        # Transform to KS
+        ks_state_deputy_sp_0 = state_cartesian_to_ks_via_newton_method(x_vec_deputy_sp)
+        h_deputy_sp_0 = energy_ks(ks_state_deputy_sp_0[1:4], ks_state_deputy_sp_0[5:8], GM)
+        ks_state_augmented_deputy_sp_0 = [ks_state_deputy_sp_0; h_deputy_sp_0]
+
+        # Propagate through full nonlinear dynamics
+        x_vec_traj_deputy_sp, _, t_traj_deputy_sp = propagate_ks_keplerian_dynamics(
+            ks_state_augmented_deputy_sp_0, times, sim_params, GM)
+
+        # Convert to relative states at each time
+        if sp_idx == 1
+            # Initialize storage on first iteration
+            for t_idx in 1:length(times)
+                sigma_points_rel_propagated[t_idx] = Vector{Vector{Float64}}(undef, num_sigma_points)
+            end
+        end
+
+        for t_idx in 1:length(times)
+            # Compute relative state: deputy - chief
+            x_vec_rel_sp = x_vec_traj_deputy_sp[t_idx] .- x_vec_traj_chief[t_idx]
+            sigma_points_rel_propagated[t_idx][sp_idx] = x_vec_rel_sp
+        end
+    end
+
+    # Reconstruct mean and covariance at each time
+    x_vec_traj_rel_mean = Vector{Vector{Float64}}(undef, length(times))
+    P_traj_rel = Vector{Matrix{Float64}}(undef, length(times))
+
+    for t_idx in 1:length(times)
+        x_vec_traj_rel_mean[t_idx], P_traj_rel[t_idx] = reconstruct_from_sigma_points(
+            sigma_points_rel_propagated[t_idx], weights_mean, weights_cov)
+    end
+
+    return x_vec_traj_rel_mean, P_traj_rel, times
+end
+
+"""
+    propagate_ks_keplerian_relative_dynamics_linearized(x_vec_chief_0, x_vec_deputy_0, P_rel_0, times, sim_params, GM)
+
+Propagate relative state uncertainty using linearized Gaussian propagation.
+
+# Arguments
+- `x_vec_chief_0`: initial Cartesian state of chief [r_vec; v_vec]
+- `x_vec_deputy_0`: initial Cartesian state of deputy [r_vec; v_vec]
+- `P_rel_0`: initial relative state covariance matrix (6×6 in Cartesian)
+- `times`: array of times to save at
+- `sim_params`: simulation parameters
+- `GM`: gravitational parameter
+
+# Returns
+- `x_vec_traj_rel_mean`: array of mean relative states [r_vec; v_vec] at each time
+- `P_traj_rel`: array of relative state covariance matrices at each time
+- `t_traj`: array of times
+"""
+function propagate_ks_keplerian_relative_dynamics_linearized(x_vec_chief_0, x_vec_deputy_0, P_rel_0, times, sim_params, GM)
+    # Use existing function for mean propagation
+    x_vec_traj_chief, x_vec_traj_rel_mean, t_chief_traj, t_deputy_traj = propagate_ks_keplerian_relative_dynamics(
+        x_vec_chief_0, x_vec_deputy_0, times, sim_params, GM)
+
+    # Pre-allocate covariance trajectory
+    P_traj_rel = Vector{Matrix{Float64}}(undef, length(times))
+    P_traj_rel[1] = copy(P_rel_0)
+
+    # Propagate covariance at each time step
+    for t_idx in 2:length(times)
+        # Get current mean states
+        x_vec_chief_current = x_vec_traj_chief[t_idx-1]
+        x_vec_rel_current = x_vec_traj_rel_mean[t_idx-1]
+        x_vec_deputy_current = x_vec_chief_current .+ x_vec_rel_current
+
+        # Time step
+        dt = times[t_idx] - times[t_idx-1]
+
+        # Compute state transition matrix F in Cartesian relative space
+        # F = ∂(x_rel(t+dt)) / ∂(x_rel(t))
+        # We compute this by linearizing the relative dynamics
+
+        # Function to compute relative state at next time given current relative state
+        function relative_dynamics_wrapper(x_rel_input)
+            x_deputy_input = x_vec_chief_current .+ x_rel_input
+
+            # Convert to KS
+            ks_state_chief = state_cartesian_to_ks_via_newton_method(x_vec_chief_current)
+            ks_state_deputy = state_cartesian_to_ks_via_newton_method(x_deputy_input; y_vec_near=ks_state_chief[1:4])
+
+            # Compute energy
+            h_chief = energy_ks(ks_state_chief[1:4], ks_state_chief[5:8], GM)
+            h_deputy = energy_ks(ks_state_deputy[1:4], ks_state_deputy[5:8], GM)
+
+            # Create augmented states
+            ks_state_augmented_chief = [ks_state_chief; h_chief]
+            ks_state_augmented_deputy = [ks_state_deputy; h_deputy]
+
+            # Propagate both through small time step
+            times_small = [times[t_idx-1], times[t_idx]]
+            _, x_vec_traj_chief_small, _ = propagate_ks_keplerian_dynamics(ks_state_augmented_chief, times_small, sim_params, GM)
+            _, x_vec_traj_deputy_small, _ = propagate_ks_keplerian_dynamics(ks_state_augmented_deputy, times_small, sim_params, GM)
+
+            # Compute relative state at next time
+            x_rel_next = x_vec_traj_deputy_small[2] .- x_vec_traj_chief_small[2]
+
+            return x_rel_next
+        end
+
+        # Compute Jacobian using ForwardDiff
+        F = ForwardDiff.jacobian(relative_dynamics_wrapper, x_vec_rel_current)
+
+        # Propagate covariance: P(t+dt) = F * P(t) * F'
+        P_traj_rel[t_idx] = F * P_traj_rel[t_idx-1] * F'
+
+        # Ensure symmetry
+        P_traj_rel[t_idx] = (P_traj_rel[t_idx] + P_traj_rel[t_idx]') / 2.0
+    end
+
+    return x_vec_traj_rel_mean, P_traj_rel, times
 end
 
 """
