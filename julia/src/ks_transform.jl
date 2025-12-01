@@ -9,6 +9,15 @@ function L(y_vec)
         y4 -y3 y2 -y1]
 end
 
+function L_minus(y_vec)
+    y1, y2, y3, y4 = y_vec
+
+    return [y1 -y2 -y3 y4
+        y2 y1 -y4 -y3
+        y3 y4 y1 y2
+        -y4 y3 -y2 y1]
+end
+
 function R(y_vec)
     y1, y2, y3, y4 = y_vec
 
@@ -16,6 +25,15 @@ function R(y_vec)
         y2 -y1 y4 y3
         y3 -y4 -y1 -y2
         y4 y3 -y2 y1]
+end
+
+function R_minus(y_vec)
+    y1, y2, y3, y4 = y_vec
+
+    return [y1 y2 y3 y4
+        y2 -y1 -y4 y3
+        y3 y4 -y1 -y2
+        -y4 y3 -y2 y1]
 end
 
 function position_cartesian_to_ks(r_vec)
@@ -83,18 +101,18 @@ function energy_ks(y_vec, y_vec_prime, GM)
     return (GM - 2 * (y_vec_prime'y_vec_prime)) / (y_vec'y_vec)
 end
 
-function position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false)
+function position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false, reg_param=1e-10)
     # KKT matrix
     function kkt_matrix(y_vec, λ)
-        H = I(4) .+ 2R(λ)'
-        A = 2L(y_vec)
+        H = I(4) .+ (R(λ) + R_minus(λ))'
+        A = L(y_vec) + L_minus(y_vec)
         return [H A';
-            A zeros(4, 4)]
+            A reg_param * I(4)]
     end
 
     # Right-hand side vector
     function rhs(r_vec, y_vec_near, y_vec, λ)
-        b1 = -((y_vec .- y_vec_near) .+ (2L(y_vec)'λ))
+        b1 = -((y_vec .- y_vec_near) .+ ((L(y_vec) + L_minus(y_vec))'λ))
         b2 = -(L(y_vec) * y_vec .- [r_vec; 0])
         b = [b1; b2]
         return b
