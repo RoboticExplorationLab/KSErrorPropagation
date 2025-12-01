@@ -1,22 +1,5 @@
-"""
-Utility functions.
-"""
-
 using SatelliteDynamics
 
-"""
-    propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM)
-
-Compute analytical Keplerian orbit solution at given times.
-
-# Arguments
-- `oe_vec_0`: initial orbital elements [a, e, i, RAAN, omega, M_0]
-- `times`: array of times to compute solution at
-- `GM`: gravitational parameter
-
-# Returns
-- `x_vec_traj_analytical`: array of Cartesian states [r_vec; v_vec] at each time
-"""
 function propagate_analytical_keplerian_dynamics(oe_vec_0, times, GM)
     a, e, i, RAAN, omega, M_0 = oe_vec_0
     n = sqrt(GM / a^3)  # Mean motion
