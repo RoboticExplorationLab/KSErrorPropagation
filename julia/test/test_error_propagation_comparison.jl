@@ -1,0 +1,319 @@
+using Pkg
+Pkg.activate(joinpath(@__DIR__, ".."))
+
+using Plots
+using LinearAlgebra
+using SatelliteDynamics
+using DifferentialEquations
+
+const SD = SatelliteDynamics
+
+include("../src/cartesian_dynamics.jl")
+include("../src/ks_dynamics.jl")
+include("../src/error_propagation.jl")
+include("../src/utils.jl")
+
+# Define simulation parameters
+SIM_PARAMS = (
+    # Physical parameters
+    GM=SD.GM_EARTH,
+    R_EARTH=SD.R_EARTH,
+    J2=SD.J2_EARTH,
+    OMEGA_EARTH=SD.OMEGA_EARTH,
+    CD=2.2, # drag coefficient
+    A=1.0, # cross-sectional area (m²)
+    m=100.0, # mass (kg)
+    epoch_0=Epoch(2000, 1, 1, 12, 0, 0), # initial epoch at 0 TBD seconds after J2000
+
+    # Add perturbations
+    add_perturbations=true,
+
+    # Number of orbits to simulate
+    num_orbits=1,
+
+    # Sampling time (time step) in seconds
+    sampling_time=30.0,  # seconds
+
+    # Integrator to use (from DifferentialEquations.jl)
+    integrator=Tsit5,
+
+    # Integrator tolerances
+    abstol=1e-12,      # Absolute tolerance
+    reltol=1e-13,      # Relative tolerance
+
+    # Success criteria thresholds
+    max_pos_error_threshold=1.0,      # meters
+    max_vel_error_threshold=0.01,     # m/s
+
+    # Scaling factors (optional, computed from orbit if not provided)
+    t_scale=nothing,  # time scale (typically orbital period)
+    r_scale=nothing,  # position scale (typically semi-major axis)
+    v_scale=nothing,  # velocity scale
+    a_scale=nothing,  # acceleration scale
+    GM_scale=nothing,  # gravitational constant scale
+)
+
+# Define test orbits
+test_orbits = [
+    (name="Low Earth orbit (e=0.1, 750 km altitude)",
+        a=750e3 + SIM_PARAMS.R_EARTH,
+        e=0.01,
+        i=deg2rad(0.0),
+        omega=deg2rad(0.0),
+        RAAN=deg2rad(0.0),
+        M=deg2rad(0.0),
+        description="LEO"),
+    (name="Molniya orbit (e=0.74, 26600 km semi-major axis)",
+        a=26600e3,
+        e=0.74,
+        i=deg2rad(63.4),
+        omega=deg2rad(270.0),
+        RAAN=deg2rad(0.0),
+        M=deg2rad(0.0),
+        description="Molniya"),
+]
+
+# Position uncertainty scenarios (meters)
+position_uncertainties = [1e3, 1e4, 1e5]  # 1km, 10km, 100km
+
+# Number of orbits to test
+num_orbits_list = [1.0, 2.0, 5.0]
+
+println("="^80)
+println("ERROR PROPAGATION COMPARISON TEST")
+println("="^80)
+println("Comparing error propagation methods against Monte Carlo ground truth")
+println("\nTest configuration:")
+println("  Number of orbits: ", num_orbits_list)
+println("  Position uncertainties: ", position_uncertainties, " m")
+println("  Number of test scenarios: ", length(test_orbits) * length(position_uncertainties) * length(num_orbits_list))
+
+# Store results for all scenarios
+all_results = []
+
+# Loop over orbits
+for (orbit_idx, orbit) in enumerate(test_orbits)
+    sma = orbit.a
+    e = orbit.e
+    i = orbit.i
+    ω = orbit.omega
+    Ω = orbit.RAAN
+    M = orbit.M
+
+    println("\n" * "="^80)
+    println("ORBIT: ", orbit.name)
+    println("="^80)
+    println("Orbit parameters:")
+    println("  Semi-major axis: ", sma / 1e3, " km")
+    println("  Eccentricity: ", e)
+    println("  Inclination: ", rad2deg(i), " deg")
+    println("  Argument of periapsis: ", rad2deg(ω), " deg")
+    println("  RAAN: ", rad2deg(Ω), " deg")
+    println("  Mean anomaly: ", rad2deg(M), " deg")
+
+    # Convert orbital elements to Cartesian state
+    oe_vec = [sma, e, i, Ω, ω, M]
+    x_vec_0 = SD.sOSCtoCART(oe_vec; GM=SIM_PARAMS.GM, use_degrees=false)
+    r_vec_0 = x_vec_0[1:3]
+    v_vec_0 = x_vec_0[4:6]
+
+    println("\nInitial conditions:")
+    println("  Position: ", r_vec_0)
+    println("  Velocity: ", v_vec_0)
+    println("  Radius: ", norm(r_vec_0) / 1e3, " km")
+    println("  Speed: ", norm(v_vec_0) / 1e3, " km/s")
+
+    # Loop over position uncertainty scenarios
+    for σ_pos in position_uncertainties
+        # Compute velocity uncertainty from sqrt(GM/(sma + sigma_position))
+        n = sqrt(SIM_PARAMS.GM / sma^3)  # Circular orbit velocity
+        σ_vel = n * σ_pos
+
+        println("\n" * "-"^80)
+        println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
+        println("-"^80)
+        println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
+        println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
+
+        # Initial state covariance
+        P_0 = diagm([σ_pos^2, σ_pos^2, σ_pos^2, σ_vel^2, σ_vel^2, σ_vel^2])
+
+        # Loop over number of orbits
+        for num_orbits in num_orbits_list
+            println("\n" * "="^80)
+            println("NUM ORBITS: ", num_orbits)
+            println("="^80)
+
+            # Propagation time: multiple orbital periods
+            T_orbital = 2π * sqrt(sma^3 / SIM_PARAMS.GM)
+            t_0 = 0.0
+            t_end = num_orbits * T_orbital
+            dt = SIM_PARAMS.sampling_time
+            times = collect(t_0:dt:t_end)
+
+            println("\nPropagation parameters:")
+            println("  Orbital period: ", T_orbital, " s (", T_orbital / 3600, " hours)")
+            println("  Time step: ", dt, " s")
+            println("  Number of steps: ", length(times))
+            println("  Total propagation time: ", t_end / 3600, " hours")
+
+            # Scaling factors
+            t_scale = something(SIM_PARAMS.t_scale, T_orbital)
+            r_scale = something(SIM_PARAMS.r_scale, sma)
+            v_scale = something(SIM_PARAMS.v_scale, r_scale / t_scale)
+            a_scale = something(SIM_PARAMS.a_scale, v_scale / t_scale)
+            GM_scale = something(SIM_PARAMS.GM_scale, r_scale^3 / t_scale^2)
+
+            # Scaling matrices for covariance propagation
+            S = Diagonal([1 / r_scale, 1 / r_scale, 1 / r_scale, 1 / v_scale, 1 / v_scale, 1 / v_scale])
+            S_inv = Diagonal([r_scale, r_scale, r_scale, v_scale, v_scale, v_scale])
+
+            sim_params = merge(SIM_PARAMS, (t_scale=t_scale, r_scale=r_scale, v_scale=v_scale,
+                a_scale=a_scale, GM_scale=GM_scale, S=S, S_inv=S_inv))
+
+            # Monte Carlo (ground truth)
+            println("\n" * "="^80)
+            println("1. MONTE CARLO (Ground Truth)")
+            println("="^80)
+            x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 1000)
+            println("  Completed: ", length(x_vec_traj_mean_mc), " states")
+
+            # Linearized Covariance Propagation (Cartesian)
+            println("\n" * "="^80)
+            println("2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)")
+            println("="^80)
+            x_vec_traj_mean_lin_cart, P_traj_lin_cart = propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, times, sim_params)
+            println("  Completed: ", length(x_vec_traj_mean_lin_cart), " states")
+
+            # Compare against Monte Carlo
+            println("\n" * "="^80)
+            println("COMPARISON AGAINST MONTE CARLO GROUND TRUTH")
+            println("="^80)
+
+            # Compute error metrics using the new function
+            metrics_lin_cart = error_metrics(x_vec_traj_mean_mc, P_traj_mc,
+                x_vec_traj_mean_lin_cart, P_traj_lin_cart)
+            N = min(length(x_vec_traj_mean_mc), length(x_vec_traj_mean_lin_cart))
+
+            # Print position errors
+            println("\nPosition errors (vs Monte Carlo):")
+            println("  Linearized Covariance Propagation (Cartesian):")
+            println("    RMS position error: ", metrics_lin_cart.pos_rms, " m")
+            println("    Min position error: ", metrics_lin_cart.pos_min, " m")
+            println("    Max position error: ", metrics_lin_cart.pos_max, " m")
+
+            # Print velocity errors
+            println("\nVelocity errors (vs Monte Carlo):")
+            println("  Linearized Covariance Propagation (Cartesian):")
+            println("    RMS velocity error: ", metrics_lin_cart.vel_rms, " m/s")
+            println("    Min velocity error: ", metrics_lin_cart.vel_min, " m/s")
+            println("    Max velocity error: ", metrics_lin_cart.vel_max, " m/s")
+
+            # Print covariance standard deviation errors
+            println("\nCovariance standard deviation errors (vs Monte Carlo):")
+            println("  Linearized Covariance Propagation (Cartesian):")
+            println("    Position standard deviations:")
+            println("      X: RMSE = ", metrics_lin_cart.cov_pos_rmse[1], " m, Min = ", metrics_lin_cart.cov_pos_min[1], " m, Max = ", metrics_lin_cart.cov_pos_max[1], " m")
+            println("      Y: RMSE = ", metrics_lin_cart.cov_pos_rmse[2], " m, Min = ", metrics_lin_cart.cov_pos_min[2], " m, Max = ", metrics_lin_cart.cov_pos_max[2], " m")
+            println("      Z: RMSE = ", metrics_lin_cart.cov_pos_rmse[3], " m, Min = ", metrics_lin_cart.cov_pos_min[3], " m, Max = ", metrics_lin_cart.cov_pos_max[3], " m")
+            println("    Velocity standard deviations:")
+            println("      Vx: RMSE = ", metrics_lin_cart.cov_vel_rmse[1], " m/s, Min = ", metrics_lin_cart.cov_vel_min[1], " m/s, Max = ", metrics_lin_cart.cov_vel_max[1], " m/s")
+            println("      Vy: RMSE = ", metrics_lin_cart.cov_vel_rmse[2], " m/s, Min = ", metrics_lin_cart.cov_vel_min[2], " m/s, Max = ", metrics_lin_cart.cov_vel_max[2], " m/s")
+            println("      Vz: RMSE = ", metrics_lin_cart.cov_vel_rmse[3], " m/s, Min = ", metrics_lin_cart.cov_vel_min[3], " m/s, Max = ", metrics_lin_cart.cov_vel_max[3], " m/s")
+
+            # Extract 3-sigma bounds for plotting (total position/velocity uncertainty)
+            σ_pos_mc = [sqrt(P_traj_mc[i][1, 1] + P_traj_mc[i][2, 2] + P_traj_mc[i][3, 3]) for i in 1:N]
+            σ_pos_lin_cart = [sqrt(P_traj_lin_cart[i][1, 1] + P_traj_lin_cart[i][2, 2] + P_traj_lin_cart[i][3, 3]) for i in 1:N]
+
+            σ_vel_mc = [sqrt(P_traj_mc[i][4, 4] + P_traj_mc[i][5, 5] + P_traj_mc[i][6, 6]) for i in 1:N]
+            σ_vel_lin_cart = [sqrt(P_traj_lin_cart[i][4, 4] + P_traj_lin_cart[i][5, 5] + P_traj_lin_cart[i][6, 6]) for i in 1:N]
+
+            # Compute Frobenius norm error trajectory for plotting
+            cov_error_traj_lin_cart = [norm(P_traj_lin_cart[i] - P_traj_mc[i]) for i in 1:N]
+
+            # Create plots
+            println("\nGenerating plots...")
+
+            # Plot 1: Mean position comparison
+            p1 = plot(times[1:N] ./ 3600, [x_vec_traj_mean_mc[i][1] for i in 1:N],
+                label="Monte Carlo (x)", linewidth=2, color=:black, linestyle=:solid)
+            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_lin_cart[i][1] for i in 1:N],
+                label="Linearized Covariance (x)", linewidth=2, color=:green, linestyle=:dash)
+            plot!(p1, xlabel="Time (hours)", ylabel="Position X (m)",
+                title="Mean Position X Comparison", legend=:topright)
+
+            # Plot 2: Position uncertainty (3-sigma)
+            p2 = plot(times[1:N] ./ 3600, 3.0 .* σ_pos_mc, label="Monte Carlo (3σ)",
+                linewidth=2, color=:black, linestyle=:solid)
+            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_lin_cart, label="Linearized Covariance (3σ)",
+                linewidth=2, color=:green, linestyle=:dash)
+            plot!(p2, xlabel="Time (hours)", ylabel="Position Uncertainty (m)",
+                title="Position Uncertainty (3-sigma)", legend=:topright)
+
+            # Plot 3: Velocity uncertainty (3-sigma)
+            p3 = plot(times[1:N] ./ 3600, 3.0 .* σ_vel_mc, label="Monte Carlo (3σ)",
+                linewidth=2, color=:black, linestyle=:solid)
+            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_lin_cart, label="Linearized Covariance (3σ)",
+                linewidth=2, color=:green, linestyle=:dash)
+            plot!(p3, xlabel="Time (hours)", ylabel="Velocity Uncertainty (m/s)",
+                title="Velocity Uncertainty (3-sigma)", legend=:topright)
+
+            # Plot 4: Covariance error (Frobenius norm)
+            p4 = plot(times[1:N] ./ 3600, cov_error_traj_lin_cart, label="Linearized Covariance",
+                linewidth=2, color=:green, linestyle=:dash)
+            plot!(p4, xlabel="Time (hours)", ylabel="Frobenius Norm",
+                title="Covariance Error vs Monte Carlo", legend=:topright, yscale=:log10)
+
+            # Generate filename based on scenario
+            filename = "figs/test_error_propagation_comparison_orb$(orbit_idx)_pos$(Int(σ_pos))m_orbits$(num_orbits).png"
+
+            # Combine plots
+            p_combined = plot(p1, p2, p3, p4, layout=(4, 1), size=(800, 1600))
+            savefig(p_combined, filename)
+            println("  Saved plot to ", filename)
+
+            # Store results
+            push!(all_results, (
+                orbit=orbit.name,
+                σ_pos=σ_pos,
+                σ_vel=σ_vel,
+                num_orbits=num_orbits,
+                metrics_lin_cart=metrics_lin_cart,
+            ))
+
+            println("\n" * "="^80)
+            println("SCENARIO COMPLETE")
+            println("="^80)
+        end  # end num_orbits loop
+    end  # end position uncertainty loop
+end  # end orbit loop
+
+println("\n" * "="^80)
+println("ALL TESTS COMPLETE")
+println("="^80)
+println("\nSummary of all scenarios:")
+for (idx, result) in enumerate(all_results)
+    m = result.metrics_lin_cart
+    println("\nScenario $idx:")
+    println("  Orbit: ", result.orbit)
+    println("  Position uncertainty: ", result.σ_pos, " m")
+    println("  Velocity uncertainty: ", result.σ_vel, " m/s")
+    println("  Number of orbits: ", result.num_orbits)
+    println("  Position errors (Linearized):")
+    println("    RMS: ", m.pos_rms, " m")
+    println("    Min: ", m.pos_min, " m")
+    println("    Max: ", m.pos_max, " m")
+    println("  Velocity errors (Linearized):")
+    println("    RMS: ", m.vel_rms, " m/s")
+    println("    Min: ", m.vel_min, " m/s")
+    println("    Max: ", m.vel_max, " m/s")
+    println("  Covariance position std dev errors (Linearized):")
+    println("    X: RMSE = ", m.cov_pos_rmse[1], " m, Min = ", m.cov_pos_min[1], " m, Max = ", m.cov_pos_max[1], " m")
+    println("    Y: RMSE = ", m.cov_pos_rmse[2], " m, Min = ", m.cov_pos_min[2], " m, Max = ", m.cov_pos_max[2], " m")
+    println("    Z: RMSE = ", m.cov_pos_rmse[3], " m, Min = ", m.cov_pos_min[3], " m, Max = ", m.cov_pos_max[3], " m")
+    println("  Covariance velocity std dev errors (Linearized):")
+    println("    Vx: RMSE = ", m.cov_vel_rmse[1], " m/s, Min = ", m.cov_vel_min[1], " m/s, Max = ", m.cov_vel_max[1], " m/s")
+    println("    Vy: RMSE = ", m.cov_vel_rmse[2], " m/s, Min = ", m.cov_vel_min[2], " m/s, Max = ", m.cov_vel_max[2], " m/s")
+    println("    Vz: RMSE = ", m.cov_vel_rmse[3], " m/s, Min = ", m.cov_vel_min[3], " m/s, Max = ", m.cov_vel_max[3], " m/s")
+end
+
