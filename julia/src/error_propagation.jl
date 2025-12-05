@@ -386,6 +386,89 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
     return x_vec_traj_mean, P_traj
 end
 
+function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
+    # Scale initial state and covariance for numerical stability
+    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
+    P_0_scaled = sim_params.S * P_0 * sim_params.S'
+
+    # Step 1: Compute eigenvalue decomposition: P = Q * Λ * Q'
+    eigen_decomp = eigen(P_0_scaled)
+    Q = eigen_decomp.vectors  # Eigenvectors (columns)
+    λ_eigen = eigen_decomp.values  # Eigenvalues
+
+    # Step 2: Generate sigma points using eigen-based method
+    n = 6  # State dimension
+    num_sigma_points = 2 * n
+    sigma_points_0_scaled = Vector{Vector{Float64}}(undef, num_sigma_points)
+
+    # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
+    # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
+    for i in 1:n
+        q_i = Q[:, i]  # i-th eigenvector
+        sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
+        sigma_points_0_scaled[i] = x_vec_0_scaled .+ sqrt_n_λ_i .* q_i
+        sigma_points_0_scaled[n+i] = x_vec_0_scaled .- sqrt_n_λ_i .* q_i
+    end
+
+    # Step 3: Compute weights for exact mean and covariance matching
+    w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
+    w_m = fill(w, num_sigma_points)
+    w_c = fill(w, num_sigma_points)
+
+    # Step 4: Unscale sigma points for propagation (propagate_ks_relative_dynamics expects unscaled input)
+    sigma_points_0 = [sim_params.S_inv * s for s in sigma_points_0_scaled]
+
+    # Step 5: Propagate each sigma point (deputy) using linearized KS relative dynamics
+    # Note: propagate_ks_relative_dynamics computes the chief (mean) trajectory internally
+    println("  Propagating ", num_sigma_points, " sigma points (deputies) via linearized KS relative dynamics...")
+    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
+
+    for (i, sigma_point_0) in enumerate(sigma_points_0)
+        if i % 6 == 0
+            println("    Sigma point ", i, " / ", num_sigma_points)
+        end
+
+        # Propagate using linearized KS relative dynamics
+        # x_vec_0 is the chief (mean), sigma_point_0 is the deputy
+        x_vec_traj_chief_i, x_vec_traj_rel_i, _, _ = propagate_ks_relative_dynamics(x_vec_0, sigma_point_0, times, sim_params)
+
+        # Compute deputy trajectory: deputy = chief + relative
+        x_vec_traj_deputy_i = [x_vec_traj_chief_i[k] + x_vec_traj_rel_i[k] for k in 1:length(times)]
+        sigma_points_propagated[i] = x_vec_traj_deputy_i
+    end
+
+    # Step 6: Compute weighted mean and covariance at each time
+    # The mean should be the weighted mean of all sigma points (not just the chief)
+    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    P_traj = Vector{Matrix{Float64}}(undef, length(times))
+
+    for t_idx in 1:length(times)
+        # Scale propagated sigma points for numerical stability in covariance computation
+        sigma_points_t_scaled = [sim_params.S * sigma_points_propagated[i][t_idx] for i in 1:num_sigma_points]
+
+        # Compute weighted mean in scaled coordinates
+        x_mean_scaled = zeros(6)
+        for i in 1:num_sigma_points
+            x_mean_scaled .+= w_m[i] .* sigma_points_t_scaled[i]
+        end
+
+        # Unscale mean
+        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
+
+        # Compute weighted covariance in scaled coordinates
+        P_scaled = zeros(6, 6)
+        for i in 1:num_sigma_points
+            diff_scaled = sigma_points_t_scaled[i] .- x_mean_scaled
+            P_scaled .+= w_c[i] .* (diff_scaled * diff_scaled')
+        end
+
+        # Unscale covariance: P = S_inv * P_scaled * S_inv'
+        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+    end
+
+    return x_vec_traj_mean, P_traj
+end
+
 function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
     # Ensure trajectories have the same length
     N = min(length(x_vec_traj_ref), length(x_vec_traj_test), length(P_traj_ref), length(P_traj_test))
