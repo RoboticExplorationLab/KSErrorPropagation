@@ -175,7 +175,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             println("\n" * "="^80)
             println("1. MONTE CARLO (Ground Truth)")
             println("="^80)
-            x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 1000)
+            x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 5000)
             println("  Completed: ", length(x_vec_traj_mean_mc), " states")
 
             # Linearized Covariance Propagation (Cartesian)
@@ -325,6 +325,45 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             println("      Vy: RMSE = ", metrics_lin_ks_sigma.cov_vel_rmse[2], " m/s, Min = ", metrics_lin_ks_sigma.cov_vel_min[2], " m/s, Max = ", metrics_lin_ks_sigma.cov_vel_max[2], " m/s")
             println("      Vz: RMSE = ", metrics_lin_ks_sigma.cov_vel_rmse[3], " m/s, Min = ", metrics_lin_ks_sigma.cov_vel_min[3], " m/s, Max = ", metrics_lin_ks_sigma.cov_vel_max[3], " m/s")
 
+            # Compute Frobenius norm error trajectory for plotting
+            cov_error_traj_lin_cart = [norm(P_traj_lin_cart[i] - P_traj_mc[i]) for i in 1:N]
+            cov_error_traj_ut_cart = [norm(P_traj_ut_cart[i] - P_traj_mc[i]) for i in 1:N]
+            cov_error_traj_eigen_cart = [norm(P_traj_eigen_cart[i] - P_traj_mc[i]) for i in 1:N]
+            cov_error_traj_eigen_ks = [norm(P_traj_eigen_ks[i] - P_traj_mc[i]) for i in 1:N]
+            cov_error_traj_lin_ks_sigma = [norm(P_traj_lin_ks_sigma[i] - P_traj_mc[i]) for i in 1:N]
+
+            # Print Frobenius norm covariance error statistics
+            println("\nCovariance Frobenius norm errors (vs Monte Carlo):")
+            cov_frob_rmse_lin_cart = sqrt(sum(cov_error_traj_lin_cart .^ 2) / N)
+            cov_frob_min_lin_cart = minimum(cov_error_traj_lin_cart)
+            cov_frob_max_lin_cart = maximum(cov_error_traj_lin_cart)
+            println("  Linearized Covariance Propagation (Cartesian):")
+            println("    RMSE = ", cov_frob_rmse_lin_cart, ", Min = ", cov_frob_min_lin_cart, ", Max = ", cov_frob_max_lin_cart)
+
+            cov_frob_rmse_ut_cart = sqrt(sum(cov_error_traj_ut_cart .^ 2) / N)
+            cov_frob_min_ut_cart = minimum(cov_error_traj_ut_cart)
+            cov_frob_max_ut_cart = maximum(cov_error_traj_ut_cart)
+            println("  Unscented Transform (Cartesian):")
+            println("    RMSE = ", cov_frob_rmse_ut_cart, ", Min = ", cov_frob_min_ut_cart, ", Max = ", cov_frob_max_ut_cart)
+
+            cov_frob_rmse_eigen_cart = sqrt(sum(cov_error_traj_eigen_cart .^ 2) / N)
+            cov_frob_min_eigen_cart = minimum(cov_error_traj_eigen_cart)
+            cov_frob_max_eigen_cart = maximum(cov_error_traj_eigen_cart)
+            println("  Eigen-based Sigma Points (Cartesian):")
+            println("    RMSE = ", cov_frob_rmse_eigen_cart, ", Min = ", cov_frob_min_eigen_cart, ", Max = ", cov_frob_max_eigen_cart)
+
+            cov_frob_rmse_eigen_ks = sqrt(sum(cov_error_traj_eigen_ks .^ 2) / N)
+            cov_frob_min_eigen_ks = minimum(cov_error_traj_eigen_ks)
+            cov_frob_max_eigen_ks = maximum(cov_error_traj_eigen_ks)
+            println("  Eigen-based Sigma Points (KS):")
+            println("    RMSE = ", cov_frob_rmse_eigen_ks, ", Min = ", cov_frob_min_eigen_ks, ", Max = ", cov_frob_max_eigen_ks)
+
+            cov_frob_rmse_lin_ks_sigma = sqrt(sum(cov_error_traj_lin_ks_sigma .^ 2) / N)
+            cov_frob_min_lin_ks_sigma = minimum(cov_error_traj_lin_ks_sigma)
+            cov_frob_max_lin_ks_sigma = maximum(cov_error_traj_lin_ks_sigma)
+            println("  Linearized KS Sigma Points:")
+            println("    RMSE = ", cov_frob_rmse_lin_ks_sigma, ", Min = ", cov_frob_min_lin_ks_sigma, ", Max = ", cov_frob_max_lin_ks_sigma)
+
             # Extract 3-sigma bounds for plotting (total position/velocity uncertainty)
             σ_pos_mc = [sqrt(P_traj_mc[i][1, 1] + P_traj_mc[i][2, 2] + P_traj_mc[i][3, 3]) for i in 1:N]
             σ_pos_lin_cart = [sqrt(P_traj_lin_cart[i][1, 1] + P_traj_lin_cart[i][2, 2] + P_traj_lin_cart[i][3, 3]) for i in 1:N]
@@ -339,13 +378,6 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             σ_vel_eigen_cart = [sqrt(P_traj_eigen_cart[i][4, 4] + P_traj_eigen_cart[i][5, 5] + P_traj_eigen_cart[i][6, 6]) for i in 1:N]
             σ_vel_eigen_ks = [sqrt(P_traj_eigen_ks[i][4, 4] + P_traj_eigen_ks[i][5, 5] + P_traj_eigen_ks[i][6, 6]) for i in 1:N]
             σ_vel_lin_ks_sigma = [sqrt(P_traj_lin_ks_sigma[i][4, 4] + P_traj_lin_ks_sigma[i][5, 5] + P_traj_lin_ks_sigma[i][6, 6]) for i in 1:N]
-
-            # Compute Frobenius norm error trajectory for plotting
-            cov_error_traj_lin_cart = [norm(P_traj_lin_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_ut_cart = [norm(P_traj_ut_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_eigen_cart = [norm(P_traj_eigen_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_eigen_ks = [norm(P_traj_eigen_ks[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_lin_ks_sigma = [norm(P_traj_lin_ks_sigma[i] - P_traj_mc[i]) for i in 1:N]
 
             # Create plots
             println("\nGenerating plots...")
@@ -368,7 +400,8 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
 
             # Plot 2: Position uncertainty (3-sigma)
             p2 = plot(times[1:N] ./ 3600, 3.0 .* σ_pos_mc, label="Monte Carlo (3σ)",
-                linewidth=2, color=:black, linestyle=:solid)
+                linewidth=2, color=:black, linestyle=:solid, xlabel="Time (hours)",
+                ylabel="Position Uncertainty (m)", yscale=:log10)
             plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_lin_cart, label="Linearized Covariance (3σ)",
                 linewidth=2, color=:green, linestyle=:dash)
             plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_ut_cart, label="Unscented Transform (3σ)",
@@ -379,12 +412,12 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 linewidth=2, color=:orange, linestyle=:dashdotdot)
             plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_lin_ks_sigma, label="Linearized KS Sigma Points (3σ)",
                 linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p2, xlabel="Time (hours)", ylabel="Position Uncertainty (m)",
-                title="Position Uncertainty (3-sigma)", legend=:topright)
+            plot!(p2, title="Position Uncertainty (3-sigma)", legend=:topright)
 
             # Plot 3: Velocity uncertainty (3-sigma)
             p3 = plot(times[1:N] ./ 3600, 3.0 .* σ_vel_mc, label="Monte Carlo (3σ)",
-                linewidth=2, color=:black, linestyle=:solid)
+                linewidth=2, color=:black, linestyle=:solid, xlabel="Time (hours)",
+                ylabel="Velocity Uncertainty (m/s)", yscale=:log10)
             plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_lin_cart, label="Linearized Covariance (3σ)",
                 linewidth=2, color=:green, linestyle=:dash)
             plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_ut_cart, label="Unscented Transform (3σ)",
@@ -395,8 +428,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 linewidth=2, color=:orange, linestyle=:dashdotdot)
             plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_lin_ks_sigma, label="Linearized KS Sigma Points (3σ)",
                 linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p3, xlabel="Time (hours)", ylabel="Velocity Uncertainty (m/s)",
-                title="Velocity Uncertainty (3-sigma)", legend=:topright)
+            plot!(p3, title="Velocity Uncertainty (3-sigma)", legend=:topright)
 
             # Plot 4: Covariance error (Frobenius norm)
             p4 = plot(times[1:N] ./ 3600, cov_error_traj_lin_cart, label="Linearized Covariance",
@@ -415,8 +447,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Generate filename based on scenario
             filename = "figs/test_error_propagation_comparison_orb$(orbit_idx)_pos$(Int(σ_pos))m_orbits$(num_orbits).png"
 
-            # Combine plots
-            p_combined = plot(p1, p2, p3, p4, layout=(4, 1), size=(800, 1600))
+            # Combine plots with increased left margin for y-axis labels
+            # Use wider size and set margins explicitly to ensure y-labels are visible
+            p_combined = plot(p1, p2, p3, p4, layout=(4, 1), size=(1000, 1600),
+                left_margin=50Plots.px)
             savefig(p_combined, filename)
             println("  Saved plot to ", filename)
 
