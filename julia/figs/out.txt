@@ -1,0 +1,1039 @@
+================================================================================
+ERROR PROPAGATION COMPARISON TEST
+================================================================================
+Comparing error propagation methods against Monte Carlo ground truth
+
+Test configuration:
+  Number of orbits: [3.0]
+  Position uncertainties: [1000.0, 10000.0, 100000.0] m
+  Number of test scenarios: 6
+
+================================================================================
+ORBIT: Low Earth orbit (e=0.1, 750 km altitude)
+================================================================================
+Orbit parameters:
+  Semi-major axis: 7128.1363 km
+  Eccentricity: 0.01
+  Inclination: 0.0 deg
+  Argument of periapsis: 0.0 deg
+  RAAN: 0.0 deg
+  Mean anomaly: 0.0 deg
+
+Initial conditions:
+  Position: [7.056854937e6, 0.0, 0.0]
+  Velocity: [-0.0, 7553.078172783234, 0.0]
+  Radius: 7056.854937 km
+  Speed: 7.553078172783233 km/s
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 1000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 1000.0 m (1-sigma)
+  Velocity uncertainty: 1.0597206953153866 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 5989.284921852152 s (1.6636902560700424 hours)
+  Time step: 30.0 s
+  Number of steps: 599
+  Total propagation time: 4.991070768210127 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 599 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 599 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 599 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 599 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 599 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 599 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 11319.582085752447 m²/s²
+  Completed: 599 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1351.6584093177644 m, Min = 27.21368918644377 m, Max = 2381.892339693779 m
+  Unscented Transform (Cartesian):
+    RMSE = 1346.6378673047468 m, Min = 27.213716905399764 m, Max = 2391.8220252324513 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 1346.6849059443953 m, Min = 27.211715199877855 m, Max = 2392.027165537629 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 1346.6848968354147 m, Min = 27.21171629055978 m, Max = 2392.0271443175952 m
+  Linearized KS Sigma Points:
+    RMSE = 1368.143124095254 m, Min = 27.213427976252454 m, Max = 2438.7868394794655 m
+  Linearized KS Dynamics:
+    RMSE = 1351.6584127440494 m, Min = 27.213690782767394 m, Max = 2381.8923334298875 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1.4264322270444452 m/s, Min = 0.03146439470517346 m/s, Max = 2.524792797594986 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 1.4066157973164701 m/s, Min = 0.03146344384621435 m/s, Max = 2.5091619664795766 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 1.4066694259138546 m/s, Min = 0.031464394703519506 m/s, Max = 2.509349524928825 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 1.4066694160223534 m/s, Min = 0.031464394703519506 m/s, Max = 2.5093495024771895 m/s
+  Linearized KS Sigma Points:
+    RMSE = 1.4326301380784232 m/s, Min = 0.031464394703519506 m/s, Max = 2.569053239679749 m/s
+  Linearized KS Dynamics:
+    RMSE = 1.4264322308803987 m/s, Min = 0.03146439470572478 m/s, Max = 2.5247927920302464 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 308.9827685393174 m, Min = 0.5447305438374315 m, Max = 519.8479106788 m
+  Unscented Transform (Cartesian):
+    RMSE = 309.9231101778186 m, Min = 0.5447313952840886 m, Max = 521.962124678932 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 307.9984118350111 m, Min = 0.5449241758378776 m, Max = 517.2911259601533 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 307.99841157463 m, Min = 0.5449241740502657 m, Max = 517.2911255752988 m
+  Linearized KS Sigma Points:
+    RMSE = 11894.571860694385 m, Min = 11.455336567212726 m, Max = 20789.72521801621 m
+  Linearized KS Dynamics:
+    RMSE = 31453.74669816484 m, Min = 15.867887878770034 m, Max = 54720.061691255614 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 0.31961744870104775 m/s, Min = 0.008850231880681125 m/s, Max = 0.5244258391665113 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 0.32066750677836986 m/s, Min = 0.008850231833235078 m/s, Max = 0.5273934439305066 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 0.31852113251467706 m/s, Min = 0.008850231880800585 m/s, Max = 0.5209336616907194 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 0.31852113223462686 m/s, Min = 0.008850231880800585 m/s, Max = 0.5209336612058166 m/s
+  Linearized KS Sigma Points:
+    RMSE = 12.453942471243735 m/s, Min = 0.00104043897146755 m/s, Max = 21.76457172163275 m/s
+  Linearized KS Dynamics:
+    RMSE = 33.00000257429115 m/s, Min = 0.001066397323733037 m/s, Max = 58.04132838452963 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb1_pos1000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 10000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 10000.0 m (1-sigma)
+  Velocity uncertainty: 10.597206953153865 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 5989.284921852152 s (1.6636902560700424 hours)
+  Time step: 30.0 s
+  Number of steps: 599
+  Total propagation time: 4.991070768210127 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 599 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 599 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 599 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 599 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 599 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 599 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 113195.82085752448 m²/s²
+  Completed: 599 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 22392.975233949775 m, Min = 113.0151336497515 m, Max = 50471.30016031597 m
+  Unscented Transform (Cartesian):
+    RMSE = 2898.80942663754 m, Min = 130.8402302427074 m, Max = 5370.551567951053 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 2910.603050164832 m, Min = 130.83792563477184 m, Max = 5461.032312113191 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 2910.6030591565236 m, Min = 130.8379254843131 m, Max = 5461.032331022465 m
+  Linearized KS Sigma Points:
+    RMSE = 11397.739998532106 m, Min = 95.6680686126675 m, Max = 25449.659812842634 m
+  Linearized KS Dynamics:
+    RMSE = 22392.97523212457 m, Min = 113.0151347736993 m, Max = 50471.300159850936 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 23.898556385845644 m/s, Min = 0.15682530399130037 m/s, Max = 53.069387755757695 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 2.970772728335063 m/s, Min = 0.013136737672757694 m/s, Max = 5.318563130248295 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 2.9791196694099087 m/s, Min = 0.013137437922825347 m/s, Max = 5.454600945121336 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 2.9791196790907484 m/s, Min = 0.013137437953856362 m/s, Max = 5.454600965954058 m/s
+  Linearized KS Sigma Points:
+    RMSE = 11.341147818936829 m/s, Min = 0.04831377226671753 m/s, Max = 24.467667140271384 m/s
+  Linearized KS Dynamics:
+    RMSE = 23.89855638664504 m/s, Min = 0.15682530563739017 m/s, Max = 53.069387758896504 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 7035.197710758576 m, Min = 76.27044516504975 m, Max = 10626.99645068997 m
+  Unscented Transform (Cartesian):
+    RMSE = 6153.685632415827 m, Min = 76.27044518968614 m, Max = 8987.776802400476 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 7992.105800877366 m, Min = 76.2704451649879 m, Max = 12974.76532074355 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 7992.105804580649 m, Min = 76.27044516489332 m, Max = 12974.765326768975 m
+  Linearized KS Sigma Points:
+    RMSE = 129567.00007156303 m, Min = 76.27044516507885 m, Max = 224354.3763728314 m
+  Linearized KS Dynamics:
+    RMSE = 324579.12756473065 m, Min = 76.27044516504975 m, Max = 561887.013284291 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 7.309085543095256 m/s, Min = 0.001233929993535554 m/s, Max = 10.898430632499753 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 6.350434678949116 m/s, Min = 0.0012339316359444297 m/s, Max = 9.259505543568139 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 8.362432178760491 m/s, Min = 0.0012566377354517044 m/s, Max = 13.92645837106852 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 8.362432182660983 m/s, Min = 0.001256637734115884 m/s, Max = 13.926458378967823 m/s
+  Linearized KS Sigma Points:
+    RMSE = 135.79803925673525 m/s, Min = 0.009108762604935094 m/s, Max = 235.96761797876218 m/s
+  Linearized KS Dynamics:
+    RMSE = 340.4257174114317 m/s, Min = 0.016402008840319837 m/s, Max = 596.544455393718 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb1_pos10000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 100000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 100000.0 m (1-sigma)
+  Velocity uncertainty: 105.97206953153865 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 5989.284921852152 s (1.6636902560700424 hours)
+  Time step: 30.0 s
+  Number of steps: 599
+  Total propagation time: 4.991070768210127 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 599 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 599 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 599 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 599 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 599 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 599 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 1.1319582085752445e6 m²/s²
+  Completed: 599 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1.791080518495324e6 m, Min = 2431.8430472939926 m, Max = 3.710445449119113e6 m
+  Unscented Transform (Cartesian):
+    RMSE = 394712.040155275 m, Min = 2431.8415906119535 m, Max = 1.1151817003235845e6 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 107971.25211501496 m, Min = 2431.834558660442 m, Max = 259744.74860988886 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 292334.5236378065 m, Min = 2431.834558664582 m, Max = 1.2822492485422809e6 m
+  Linearized KS Sigma Points:
+    RMSE = 985879.1584101262 m, Min = 2432.1681935300203 m, Max = 2.062969583590693e6 m
+  Linearized KS Dynamics:
+    RMSE = 1.7910805184938763e6 m, Min = 2431.8430472984787 m, Max = 3.710445449117793e6 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1889.7021286162828 m/s, Min = 2.4090415389045265 m/s, Max = 3907.7197301758547 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 497.7239904378435 m/s, Min = 1.0674125819378222 m/s, Max = 1329.5612199971224 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 136.54474285220448 m/s, Min = 1.0703437338272463 m/s, Max = 294.5902767999034 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = NaN m/s, Min = NaN m/s, Max = NaN m/s
+  Linearized KS Sigma Points:
+    RMSE = NaN m/s, Min = NaN m/s, Max = NaN m/s
+  Linearized KS Dynamics:
+    RMSE = 1889.7021286175038 m/s, Min = 2.40904153965879 m/s, Max = 3907.7197301781025 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 801229.1374040997 m, Min = 1.9442245778627694 m, Max = 1.985662825174041e6 m
+  Unscented Transform (Cartesian):
+    RMSE = 1.7375605299984396e6 m, Min = 442.59867510781623 m, Max = 4.43115820265584e6 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 39841.778402323966 m, Min = 32.86199562717229 m, Max = 91583.88295855466 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 280765.64440165024 m, Min = 32.86268621869385 m, Max = 1.3468240164666697e6 m
+  Linearized KS Sigma Points:
+    RMSE = 995703.4792124784 m, Min = 1188.0119171143451 m, Max = 1.6891569227145528e6 m
+  Linearized KS Dynamics:
+    RMSE = 2.481159841324936e6 m, Min = 1188.0119171147817 m, Max = 3.5337485391182397e6 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 863.0753025130966 m/s, Min = 0.02739469883144352 m/s, Max = 2170.7011950825627 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 1907.3908370363722 m/s, Min = 0.027394699918176002 m/s, Max = 4785.909825961545 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 58.211786861790976 m/s, Min = 0.016600235820078524 m/s, Max = 138.7018257972186 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = NaN m/s, Min = NaN m/s, Max = NaN m/s
+  Linearized KS Sigma Points:
+    RMSE = NaN m/s, Min = NaN m/s, Max = NaN m/s
+  Linearized KS Dynamics:
+    RMSE = 2593.246794013011 m/s, Min = 0.06762591883301639 m/s, Max = 3695.0063561865327 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb1_pos100000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+================================================================================
+ORBIT: Molniya orbit (e=0.74, 26600 km semi-major axis)
+================================================================================
+Orbit parameters:
+  Semi-major axis: 26600.0 km
+  Eccentricity: 0.74
+  Inclination: 63.4 deg
+  Argument of periapsis: 270.0 deg
+  RAAN: 0.0 deg
+  Mean anomaly: 0.0 deg
+
+Initial conditions:
+  Position: [-1.2704485894354641e-9, -3.0967018514929316e6, -6.1839707019810695e6]
+  Velocity: [10014.194438691926, -8.236876216803684e-13, -1.644866171924234e-12]
+  Radius: 6915.999999999999 km
+  Speed: 10.014194438691925 km/s
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 1000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 1000.0 m (1-sigma)
+  Velocity uncertainty: 0.8321694852758493 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 43175.108298393 s (11.993085638442501 hours)
+  Time step: 30.0 s
+  Number of steps: 4318
+  Total propagation time: 35.979256915327504 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 4318 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 4318 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 4318 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 4318 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 4318 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 4318 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 11785.358666076778 m²/s²
+  Completed: 4318 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 31491.370560247262 m, Min = 11.550528878053557 m, Max = 239633.8936319107 m
+  Unscented Transform (Cartesian):
+    RMSE = 12653.452913649022 m, Min = 11.549692238541033 m, Max = 42976.22201585945 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 12706.575580984194 m, Min = 11.550528760963298 m, Max = 46939.87380525241 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 12706.574462204713 m, Min = 11.55052876931136 m, Max = 46939.856170372084 m
+  Linearized KS Sigma Points:
+    RMSE = 20919.993549517636 m, Min = 11.550534327801277 m, Max = 139372.72160549933 m
+  Linearized KS Dynamics:
+    RMSE = 31491.370232148045 m, Min = 11.550528883638878 m, Max = 239633.8888434633 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 30.545165169274092 m/s, Min = 0.015070318433801062 m/s, Max = 268.62985538143374 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 5.150415253214249 m/s, Min = 0.015069393510348939 m/s, Max = 46.74168291050908 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 4.715867633717689 m/s, Min = 0.015070318433801057 m/s, Max = 31.550837987816994 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 4.7158676606209875 m/s, Min = 0.015070318433784381 m/s, Max = 31.550839199876794 m/s
+  Linearized KS Sigma Points:
+    RMSE = 15.865126438346476 m/s, Min = 0.015070318433832861 m/s, Max = 144.18594223193588 m/s
+  Linearized KS Dynamics:
+    RMSE = 30.545165107824804 m/s, Min = 0.015070318433757116 m/s, Max = 268.6298521490373 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 7168.279791386137 m, Min = 0.04707823693206592 m, Max = 53132.400472775334 m
+  Unscented Transform (Cartesian):
+    RMSE = 8624.874350360096 m, Min = 0.04707131029908851 m, Max = 68203.20628546225 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 6268.4412479602925 m, Min = 0.047003491328268865 m, Max = 22725.19127084012 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 6268.439416975613 m, Min = 0.04700359816524724 m, Max = 22725.185104758944 m
+  Linearized KS Sigma Points:
+    RMSE = 168708.34044059945 m, Min = 0.09336851939724511 m, Max = 727519.091193259 m
+  Linearized KS Dynamics:
+    RMSE = 491433.45774442446 m, Min = 0.48242796384079156 m, Max = 2.2737487992387973e6 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 7.963930640087662 m/s, Min = 0.0004773769744157441 m/s, Max = 102.04634459140516 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 10.78762904122194 m/s, Min = 0.00047737693485805366 m/s, Max = 139.63201880420092 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 2.4657786730580216 m/s, Min = 0.00047736669806042187 m/s, Max = 21.889205475799827 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 2.4657781176776856 m/s, Min = 0.00047736669251285946 m/s, Max = 21.88920104423005 m/s
+  Linearized KS Sigma Points:
+    RMSE = 69.70715062875148 m/s, Min = 0.003775345897233162 m/s, Max = 440.50718917840595 m/s
+  Linearized KS Dynamics:
+    RMSE = 217.98245809914886 m/s, Min = 0.004824134035276595 m/s, Max = 1464.0410983834417 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb2_pos1000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 10000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 10000.0 m (1-sigma)
+  Velocity uncertainty: 8.321694852758494 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 43175.108298393 s (11.993085638442501 hours)
+  Time step: 30.0 s
+  Number of steps: 4318
+  Total propagation time: 35.979256915327504 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 4318 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 4318 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 4318 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 4318 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 4318 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 4318 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 117853.58666076779 m²/s²
+  Completed: 4318 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1.7482988112886047e6 m, Min = 238.0731351226632 m, Max = 9.541901863979913e6 m
+  Unscented Transform (Cartesian):
+    RMSE = 1.6329009124094364e6 m, Min = 237.3711263120182 m, Max = 1.5034765536576098e7 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 247458.33428127455 m, Min = 237.37579965981365 m, Max = 1.2770676978344836e6 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 247458.33376854405 m, Min = 237.3757990689588 m, Max = 1.277067691203711e6 m
+  Linearized KS Sigma Points:
+    RMSE = 879508.5327485058 m, Min = 237.2261851642577 m, Max = 4.546878217057792e6 m
+  Linearized KS Dynamics:
+    RMSE = 1.7482988110730872e6 m, Min = 238.0731343174985 m, Max = 9.541901865201557e6 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 961.0351870395059 m/s, Min = 0.1590508402289557 m/s, Max = 4988.422594575323 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 2575.9704154870997 m/s, Min = 0.15907846697171316 m/s, Max = 23080.81280539795 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 228.9537578186852 m/s, Min = 0.15907969814858186 m/s, Max = 1365.3670448108767 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 228.95375822095195 m/s, Min = 0.1590796981962339 m/s, Max = 1365.3670430051527 m/s
+  Linearized KS Sigma Points:
+    RMSE = 441.778494062939 m/s, Min = 0.15943000579235797 m/s, Max = 2447.6348690770815 m/s
+  Linearized KS Dynamics:
+    RMSE = 961.0351870782237 m/s, Min = 0.15905084023831628 m/s, Max = 4988.422595257081 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1.1909340694972638e6 m, Min = 0.16357003687880933 m, Max = 1.0173678692432046e7 m
+  Unscented Transform (Cartesian):
+    RMSE = 2.6325843632236673e6 m, Min = 0.3825546621810645 m, Max = 2.453876170057941e7 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 125885.95911130184 m, Min = 2.0703541974071413 m, Max = 806765.7458851095 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 125885.9595701867 m, Min = 2.0704779368825257 m, Max = 806765.7514113598 m
+  Linearized KS Sigma Points:
+    RMSE = 1.4386363580559795e6 m, Min = 8.70217313980902 m, Max = 3.501433280365685e6 m
+  Linearized KS Dynamics:
+    RMSE = 4.249443160417304e6 m, Min = 31.52301890502349 m, Max = 1.2866946172110217e7 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1265.8626385945634 m/s, Min = 2.5197137127008773e-5 m/s, Max = 11488.764566118736 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 3859.877568401432 m/s, Min = 0.00010397631237424321 m/s, Max = 34303.295664516605 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 130.58144531493522 m/s, Min = 0.00019564826214946152 m/s, Max = 725.1753351515276 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 130.58144565229932 m/s, Min = 0.0001956579963930949 m/s, Max = 725.1753402266354 m/s
+  Linearized KS Sigma Points:
+    RMSE = 411.2058627201267 m/s, Min = 0.0008897724672554119 m/s, Max = 1146.4180545837744 m/s
+  Linearized KS Dynamics:
+    RMSE = 1412.0296324566266 m/s, Min = 0.001730293648744663 m/s, Max = 4322.085230426859 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb2_pos10000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+--------------------------------------------------------------------------------
+POSITION UNCERTAINTY SCENARIO: σ_pos = 100000.0 m
+--------------------------------------------------------------------------------
+  Position uncertainty: 100000.0 m (1-sigma)
+  Velocity uncertainty: 83.21694852758493 m/s (1-sigma)
+
+================================================================================
+NUM ORBITS: 3.0
+================================================================================
+
+Propagation parameters:
+  Orbital period: 43175.108298393 s (11.993085638442501 hours)
+  Time step: 30.0 s
+  Number of steps: 4318
+  Total propagation time: 35.979256915327504 hours
+
+================================================================================
+1. MONTE CARLO (Ground Truth)
+================================================================================
+  Propagating 5000 Monte Carlo samples...
+    Sample 1000 / 5000
+    Sample 2000 / 5000
+    Sample 3000 / 5000
+    Sample 4000 / 5000
+    Sample 5000 / 5000
+  Completed: 4318 states
+
+================================================================================
+2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)
+================================================================================
+  Completed: 4318 states
+
+================================================================================
+3. UNSCENTED TRANSFORM (Cartesian Coordinates)
+================================================================================
+  Propagating 13 sigma points via Unscented Transform...
+  Completed: 4318 states
+
+================================================================================
+4. EIGEN-BASED SIGMA POINTS (Cartesian Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method...
+  Completed: 4318 states
+
+================================================================================
+5. EIGEN-BASED SIGMA POINTS (KS Coordinates)
+================================================================================
+  Propagating 12 sigma points via Eigen-based method (KS dynamics)...
+  Completed: 4318 states
+
+================================================================================
+6. LINEARIZED KS SIGMA POINTS
+================================================================================
+  Propagating 12 sigma points (deputies) via linearized KS relative dynamics...
+    Sigma point 6 / 12
+    Sigma point 12 / 12
+  Completed: 4318 states
+
+================================================================================
+7. LINEARIZED KS DYNAMICS
+================================================================================
+ Total orbital energy initial state deviation (σ_h): 1.1785358666076777e6 m²/s²
+  Completed: 4318 states
+
+================================================================================
+COMPARISON AGAINST MONTE CARLO GROUND TRUTH
+================================================================================
+
+Position errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 1.6663192155832803e7 m, Min = 1352.5810158494485 m, Max = 3.784758162673117e7 m
+  Unscented Transform (Cartesian):
+    RMSE = 2.680556002421609e8 m, Min = 1298.9809886179091 m, Max = 2.1629785699185452e9 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 6.970904085905135e6 m, Min = 1298.1886548833731 m, Max = 1.7097799289898228e7 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 6.97090408549674e6 m, Min = 1298.1886544400825 m, Max = 1.709779928735959e7 m
+  Linearized KS Sigma Points:
+    RMSE = 8.769755584352713e6 m, Min = 1295.0759554805952 m, Max = 1.543814184608864e7 m
+  Linearized KS Dynamics:
+    RMSE = 1.6663192155797344e7 m, Min = 1352.5810153862215 m, Max = 3.784758162671387e7 m
+
+Velocity errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 3235.134497797656 m/s, Min = 2.177613621333582 m/s, Max = 10012.802281456152 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 309172.1956066592 m/s, Min = 2.1776121080988196 m/s, Max = 2.560514571879351e6 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 1468.49131622858 m/s, Min = 2.177613621333583 m/s, Max = 4604.80832529313 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 1468.4913161979832 m/s, Min = 2.1776136213336037 m/s, Max = 4604.808324578815 m/s
+  Linearized KS Sigma Points:
+    RMSE = 1564.0329392169658 m/s, Min = 2.177613621333647 m/s, Max = 4526.103104710177 m/s
+  Linearized KS Dynamics:
+    RMSE = 3235.1344978885163 m/s, Min = 2.1776136213336312 m/s, Max = 10012.802281438158 m/s
+
+Position uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 5.1455666480317004e7 m, Min = 5.625707862782292 m, Max = 2.3855688816390514e8 m
+  Unscented Transform (Cartesian):
+    RMSE = 3.836187942659286e8 m, Min = 5.626461444509914 m, Max = 3.0791232862202187e9 m
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 2.6692583023251635e6 m, Min = 10.320707410108298 m, Max = 6.185349991224445e6 m
+  Eigen-based Sigma Points (KS):
+    RMSE = 2.6692583019296676e6 m, Min = 10.320830320008099 m, Max = 6.185349988693954e6 m
+  Linearized KS Sigma Points:
+    RMSE = 5.802101953404723e6 m, Min = 14.356871682306519 m, Max = 1.687097317907926e7 m
+  Linearized KS Dynamics:
+    RMSE = 7.623821151650794e6 m, Min = 31.441110677929828 m, Max = 1.8177204320467833e7 m
+
+Velocity uncertainty errors (vs Monte Carlo):
+  Linearized Covariance Propagation (Cartesian):
+    RMSE = 23794.90524747453 m/s, Min = 0.1306586775094729 m/s, Max = 167538.14665592703 m/s
+  Unscented Transform (Cartesian):
+    RMSE = 438100.8798673585 m/s, Min = 0.25923985822626605 m/s, Max = 3.6234829241625615e6 m/s
+  Eigen-based Sigma Points (Cartesian):
+    RMSE = 871.7521056216799 m/s, Min = 0.0010717297412270455 m/s, Max = 1930.7504085352934 m/s
+  Eigen-based Sigma Points (KS):
+    RMSE = 871.7521056179714 m/s, Min = 0.001071749355674001 m/s, Max = 1930.7504081385237 m/s
+  Linearized KS Sigma Points:
+    RMSE = 709.4684740213407 m/s, Min = 0.2592398583689999 m/s, Max = 1867.0896753603165 m/s
+  Linearized KS Dynamics:
+    RMSE = 2248.817481655916 m/s, Min = 0.2592398583690283 m/s, Max = 12608.94378709831 m/s
+
+Generating plots...
+  Saved plot to figs/test_error_propagation_comparison_orb2_pos100000m_orbits3.0.png
+
+================================================================================
+SCENARIO COMPLETE
+================================================================================
+
+================================================================================
+ALL TESTS COMPLETE
+================================================================================
+
+Summary of all scenarios:
+
+Scenario 1:
+  Orbit: Low Earth orbit (e=0.1, 750 km altitude)
+  Position uncertainty: 1000.0 m
+  Velocity uncertainty: 1.0597206953153866 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 1351.6584093177644 m, Min: 27.21368918644377 m, Max: 2381.892339693779 m
+    Unscented Transform - RMSE: 1346.6378673047468 m, Min: 27.213716905399764 m, Max: 2391.8220252324513 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 1346.6849059443953 m, Min: 27.211715199877855 m, Max: 2392.027165537629 m
+    Eigen-based Sigma Points (KS) - RMSE: 1346.6848968354147 m, Min: 27.21171629055978 m, Max: 2392.0271443175952 m
+    Linearized KS Sigma Points - RMSE: 1368.143124095254 m, Min: 27.213427976252454 m, Max: 2438.7868394794655 m
+    Linearized KS Dynamics - RMSE: 1351.6584127440494 m, Min: 27.213690782767394 m, Max: 2381.8923334298875 m
+  Velocity errors:
+    Linearized - RMSE: 1.4264322270444452 m/s, Min: 0.03146439470517346 m/s, Max: 2.524792797594986 m/s
+    Unscented Transform - RMSE: 1.4066157973164701 m/s, Min: 0.03146344384621435 m/s, Max: 2.5091619664795766 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 1.4066694259138546 m/s, Min: 0.031464394703519506 m/s, Max: 2.509349524928825 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 1.4066694160223534 m/s, Min: 0.031464394703519506 m/s, Max: 2.5093495024771895 m/s
+    Linearized KS Sigma Points - RMSE: 1.4326301380784232 m/s, Min: 0.031464394703519506 m/s, Max: 2.569053239679749 m/s
+    Linearized KS Dynamics - RMSE: 1.4264322308803987 m/s, Min: 0.03146439470572478 m/s, Max: 2.5247927920302464 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 308.9827685393174 m, Min: 0.5447305438374315 m, Max: 519.8479106788 m
+    Unscented Transform - RMSE: 309.9231101778186 m, Min: 0.5447313952840886 m, Max: 521.962124678932 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 307.9984118350111 m, Min: 0.5449241758378776 m, Max: 517.2911259601533 m
+    Eigen-based Sigma Points (KS) - RMSE: 307.99841157463 m, Min: 0.5449241740502657 m, Max: 517.2911255752988 m
+    Linearized KS Sigma Points - RMSE: 11894.571860694385 m, Min: 11.455336567212726 m, Max: 20789.72521801621 m
+    Linearized KS Dynamics - RMSE: 31453.74669816484 m, Min: 15.867887878770034 m, Max: 54720.061691255614 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 0.31961744870104775 m/s, Min: 0.008850231880681125 m/s, Max: 0.5244258391665113 m/s
+    Unscented Transform - RMSE: 0.32066750677836986 m/s, Min: 0.008850231833235078 m/s, Max: 0.5273934439305066 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 0.31852113251467706 m/s, Min: 0.008850231880800585 m/s, Max: 0.5209336616907194 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 0.31852113223462686 m/s, Min: 0.008850231880800585 m/s, Max: 0.5209336612058166 m/s
+    Linearized KS Sigma Points - RMSE: 12.453942471243735 m/s, Min: 0.00104043897146755 m/s, Max: 21.76457172163275 m/s
+    Linearized KS Dynamics - RMSE: 33.00000257429115 m/s, Min: 0.001066397323733037 m/s, Max: 58.04132838452963 m/s
+
+Scenario 2:
+  Orbit: Low Earth orbit (e=0.1, 750 km altitude)
+  Position uncertainty: 10000.0 m
+  Velocity uncertainty: 10.597206953153865 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 22392.975233949775 m, Min: 113.0151336497515 m, Max: 50471.30016031597 m
+    Unscented Transform - RMSE: 2898.80942663754 m, Min: 130.8402302427074 m, Max: 5370.551567951053 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 2910.603050164832 m, Min: 130.83792563477184 m, Max: 5461.032312113191 m
+    Eigen-based Sigma Points (KS) - RMSE: 2910.6030591565236 m, Min: 130.8379254843131 m, Max: 5461.032331022465 m
+    Linearized KS Sigma Points - RMSE: 11397.739998532106 m, Min: 95.6680686126675 m, Max: 25449.659812842634 m
+    Linearized KS Dynamics - RMSE: 22392.97523212457 m, Min: 113.0151347736993 m, Max: 50471.300159850936 m
+  Velocity errors:
+    Linearized - RMSE: 23.898556385845644 m/s, Min: 0.15682530399130037 m/s, Max: 53.069387755757695 m/s
+    Unscented Transform - RMSE: 2.970772728335063 m/s, Min: 0.013136737672757694 m/s, Max: 5.318563130248295 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 2.9791196694099087 m/s, Min: 0.013137437922825347 m/s, Max: 5.454600945121336 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 2.9791196790907484 m/s, Min: 0.013137437953856362 m/s, Max: 5.454600965954058 m/s
+    Linearized KS Sigma Points - RMSE: 11.341147818936829 m/s, Min: 0.04831377226671753 m/s, Max: 24.467667140271384 m/s
+    Linearized KS Dynamics - RMSE: 23.89855638664504 m/s, Min: 0.15682530563739017 m/s, Max: 53.069387758896504 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 7035.197710758576 m, Min: 76.27044516504975 m, Max: 10626.99645068997 m
+    Unscented Transform - RMSE: 6153.685632415827 m, Min: 76.27044518968614 m, Max: 8987.776802400476 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 7992.105800877366 m, Min: 76.2704451649879 m, Max: 12974.76532074355 m
+    Eigen-based Sigma Points (KS) - RMSE: 7992.105804580649 m, Min: 76.27044516489332 m, Max: 12974.765326768975 m
+    Linearized KS Sigma Points - RMSE: 129567.00007156303 m, Min: 76.27044516507885 m, Max: 224354.3763728314 m
+    Linearized KS Dynamics - RMSE: 324579.12756473065 m, Min: 76.27044516504975 m, Max: 561887.013284291 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 7.309085543095256 m/s, Min: 0.001233929993535554 m/s, Max: 10.898430632499753 m/s
+    Unscented Transform - RMSE: 6.350434678949116 m/s, Min: 0.0012339316359444297 m/s, Max: 9.259505543568139 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 8.362432178760491 m/s, Min: 0.0012566377354517044 m/s, Max: 13.92645837106852 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 8.362432182660983 m/s, Min: 0.001256637734115884 m/s, Max: 13.926458378967823 m/s
+    Linearized KS Sigma Points - RMSE: 135.79803925673525 m/s, Min: 0.009108762604935094 m/s, Max: 235.96761797876218 m/s
+    Linearized KS Dynamics - RMSE: 340.4257174114317 m/s, Min: 0.016402008840319837 m/s, Max: 596.544455393718 m/s
+
+Scenario 3:
+  Orbit: Low Earth orbit (e=0.1, 750 km altitude)
+  Position uncertainty: 100000.0 m
+  Velocity uncertainty: 105.97206953153865 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 1.791080518495324e6 m, Min: 2431.8430472939926 m, Max: 3.710445449119113e6 m
+    Unscented Transform - RMSE: 394712.040155275 m, Min: 2431.8415906119535 m, Max: 1.1151817003235845e6 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 107971.25211501496 m, Min: 2431.834558660442 m, Max: 259744.74860988886 m
+    Eigen-based Sigma Points (KS) - RMSE: 292334.5236378065 m, Min: 2431.834558664582 m, Max: 1.2822492485422809e6 m
+    Linearized KS Sigma Points - RMSE: 985879.1584101262 m, Min: 2432.1681935300203 m, Max: 2.062969583590693e6 m
+    Linearized KS Dynamics - RMSE: 1.7910805184938763e6 m, Min: 2431.8430472984787 m, Max: 3.710445449117793e6 m
+  Velocity errors:
+    Linearized - RMSE: 1889.7021286162828 m/s, Min: 2.4090415389045265 m/s, Max: 3907.7197301758547 m/s
+    Unscented Transform - RMSE: 497.7239904378435 m/s, Min: 1.0674125819378222 m/s, Max: 1329.5612199971224 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 136.54474285220448 m/s, Min: 1.0703437338272463 m/s, Max: 294.5902767999034 m/s
+    Eigen-based Sigma Points (KS) - RMSE: NaN m/s, Min: NaN m/s, Max: NaN m/s
+    Linearized KS Sigma Points - RMSE: NaN m/s, Min: NaN m/s, Max: NaN m/s
+    Linearized KS Dynamics - RMSE: 1889.7021286175038 m/s, Min: 2.40904153965879 m/s, Max: 3907.7197301781025 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 801229.1374040997 m, Min: 1.9442245778627694 m, Max: 1.985662825174041e6 m
+    Unscented Transform - RMSE: 1.7375605299984396e6 m, Min: 442.59867510781623 m, Max: 4.43115820265584e6 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 39841.778402323966 m, Min: 32.86199562717229 m, Max: 91583.88295855466 m
+    Eigen-based Sigma Points (KS) - RMSE: 280765.64440165024 m, Min: 32.86268621869385 m, Max: 1.3468240164666697e6 m
+    Linearized KS Sigma Points - RMSE: 995703.4792124784 m, Min: 1188.0119171143451 m, Max: 1.6891569227145528e6 m
+    Linearized KS Dynamics - RMSE: 2.481159841324936e6 m, Min: 1188.0119171147817 m, Max: 3.5337485391182397e6 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 863.0753025130966 m/s, Min: 0.02739469883144352 m/s, Max: 2170.7011950825627 m/s
+    Unscented Transform - RMSE: 1907.3908370363722 m/s, Min: 0.027394699918176002 m/s, Max: 4785.909825961545 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 58.211786861790976 m/s, Min: 0.016600235820078524 m/s, Max: 138.7018257972186 m/s
+    Eigen-based Sigma Points (KS) - RMSE: NaN m/s, Min: NaN m/s, Max: NaN m/s
+    Linearized KS Sigma Points - RMSE: NaN m/s, Min: NaN m/s, Max: NaN m/s
+    Linearized KS Dynamics - RMSE: 2593.246794013011 m/s, Min: 0.06762591883301639 m/s, Max: 3695.0063561865327 m/s
+
+Scenario 4:
+  Orbit: Molniya orbit (e=0.74, 26600 km semi-major axis)
+  Position uncertainty: 1000.0 m
+  Velocity uncertainty: 0.8321694852758493 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 31491.370560247262 m, Min: 11.550528878053557 m, Max: 239633.8936319107 m
+    Unscented Transform - RMSE: 12653.452913649022 m, Min: 11.549692238541033 m, Max: 42976.22201585945 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 12706.575580984194 m, Min: 11.550528760963298 m, Max: 46939.87380525241 m
+    Eigen-based Sigma Points (KS) - RMSE: 12706.574462204713 m, Min: 11.55052876931136 m, Max: 46939.856170372084 m
+    Linearized KS Sigma Points - RMSE: 20919.993549517636 m, Min: 11.550534327801277 m, Max: 139372.72160549933 m
+    Linearized KS Dynamics - RMSE: 31491.370232148045 m, Min: 11.550528883638878 m, Max: 239633.8888434633 m
+  Velocity errors:
+    Linearized - RMSE: 30.545165169274092 m/s, Min: 0.015070318433801062 m/s, Max: 268.62985538143374 m/s
+    Unscented Transform - RMSE: 5.150415253214249 m/s, Min: 0.015069393510348939 m/s, Max: 46.74168291050908 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 4.715867633717689 m/s, Min: 0.015070318433801057 m/s, Max: 31.550837987816994 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 4.7158676606209875 m/s, Min: 0.015070318433784381 m/s, Max: 31.550839199876794 m/s
+    Linearized KS Sigma Points - RMSE: 15.865126438346476 m/s, Min: 0.015070318433832861 m/s, Max: 144.18594223193588 m/s
+    Linearized KS Dynamics - RMSE: 30.545165107824804 m/s, Min: 0.015070318433757116 m/s, Max: 268.6298521490373 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 7168.279791386137 m, Min: 0.04707823693206592 m, Max: 53132.400472775334 m
+    Unscented Transform - RMSE: 8624.874350360096 m, Min: 0.04707131029908851 m, Max: 68203.20628546225 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 6268.4412479602925 m, Min: 0.047003491328268865 m, Max: 22725.19127084012 m
+    Eigen-based Sigma Points (KS) - RMSE: 6268.439416975613 m, Min: 0.04700359816524724 m, Max: 22725.185104758944 m
+    Linearized KS Sigma Points - RMSE: 168708.34044059945 m, Min: 0.09336851939724511 m, Max: 727519.091193259 m
+    Linearized KS Dynamics - RMSE: 491433.45774442446 m, Min: 0.48242796384079156 m, Max: 2.2737487992387973e6 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 7.963930640087662 m/s, Min: 0.0004773769744157441 m/s, Max: 102.04634459140516 m/s
+    Unscented Transform - RMSE: 10.78762904122194 m/s, Min: 0.00047737693485805366 m/s, Max: 139.63201880420092 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 2.4657786730580216 m/s, Min: 0.00047736669806042187 m/s, Max: 21.889205475799827 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 2.4657781176776856 m/s, Min: 0.00047736669251285946 m/s, Max: 21.88920104423005 m/s
+    Linearized KS Sigma Points - RMSE: 69.70715062875148 m/s, Min: 0.003775345897233162 m/s, Max: 440.50718917840595 m/s
+    Linearized KS Dynamics - RMSE: 217.98245809914886 m/s, Min: 0.004824134035276595 m/s, Max: 1464.0410983834417 m/s
+
+Scenario 5:
+  Orbit: Molniya orbit (e=0.74, 26600 km semi-major axis)
+  Position uncertainty: 10000.0 m
+  Velocity uncertainty: 8.321694852758494 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 1.7482988112886047e6 m, Min: 238.0731351226632 m, Max: 9.541901863979913e6 m
+    Unscented Transform - RMSE: 1.6329009124094364e6 m, Min: 237.3711263120182 m, Max: 1.5034765536576098e7 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 247458.33428127455 m, Min: 237.37579965981365 m, Max: 1.2770676978344836e6 m
+    Eigen-based Sigma Points (KS) - RMSE: 247458.33376854405 m, Min: 237.3757990689588 m, Max: 1.277067691203711e6 m
+    Linearized KS Sigma Points - RMSE: 879508.5327485058 m, Min: 237.2261851642577 m, Max: 4.546878217057792e6 m
+    Linearized KS Dynamics - RMSE: 1.7482988110730872e6 m, Min: 238.0731343174985 m, Max: 9.541901865201557e6 m
+  Velocity errors:
+    Linearized - RMSE: 961.0351870395059 m/s, Min: 0.1590508402289557 m/s, Max: 4988.422594575323 m/s
+    Unscented Transform - RMSE: 2575.9704154870997 m/s, Min: 0.15907846697171316 m/s, Max: 23080.81280539795 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 228.9537578186852 m/s, Min: 0.15907969814858186 m/s, Max: 1365.3670448108767 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 228.95375822095195 m/s, Min: 0.1590796981962339 m/s, Max: 1365.3670430051527 m/s
+    Linearized KS Sigma Points - RMSE: 441.778494062939 m/s, Min: 0.15943000579235797 m/s, Max: 2447.6348690770815 m/s
+    Linearized KS Dynamics - RMSE: 961.0351870782237 m/s, Min: 0.15905084023831628 m/s, Max: 4988.422595257081 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 1.1909340694972638e6 m, Min: 0.16357003687880933 m, Max: 1.0173678692432046e7 m
+    Unscented Transform - RMSE: 2.6325843632236673e6 m, Min: 0.3825546621810645 m, Max: 2.453876170057941e7 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 125885.95911130184 m, Min: 2.0703541974071413 m, Max: 806765.7458851095 m
+    Eigen-based Sigma Points (KS) - RMSE: 125885.9595701867 m, Min: 2.0704779368825257 m, Max: 806765.7514113598 m
+    Linearized KS Sigma Points - RMSE: 1.4386363580559795e6 m, Min: 8.70217313980902 m, Max: 3.501433280365685e6 m
+    Linearized KS Dynamics - RMSE: 4.249443160417304e6 m, Min: 31.52301890502349 m, Max: 1.2866946172110217e7 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 1265.8626385945634 m/s, Min: 2.5197137127008773e-5 m/s, Max: 11488.764566118736 m/s
+    Unscented Transform - RMSE: 3859.877568401432 m/s, Min: 0.00010397631237424321 m/s, Max: 34303.295664516605 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 130.58144531493522 m/s, Min: 0.00019564826214946152 m/s, Max: 725.1753351515276 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 130.58144565229932 m/s, Min: 0.0001956579963930949 m/s, Max: 725.1753402266354 m/s
+    Linearized KS Sigma Points - RMSE: 411.2058627201267 m/s, Min: 0.0008897724672554119 m/s, Max: 1146.4180545837744 m/s
+    Linearized KS Dynamics - RMSE: 1412.0296324566266 m/s, Min: 0.001730293648744663 m/s, Max: 4322.085230426859 m/s
+
+Scenario 6:
+  Orbit: Molniya orbit (e=0.74, 26600 km semi-major axis)
+  Position uncertainty: 100000.0 m
+  Velocity uncertainty: 83.21694852758493 m/s
+  Number of orbits: 3.0
+  Position errors:
+    Linearized - RMSE: 1.6663192155832803e7 m, Min: 1352.5810158494485 m, Max: 3.784758162673117e7 m
+    Unscented Transform - RMSE: 2.680556002421609e8 m, Min: 1298.9809886179091 m, Max: 2.1629785699185452e9 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 6.970904085905135e6 m, Min: 1298.1886548833731 m, Max: 1.7097799289898228e7 m
+    Eigen-based Sigma Points (KS) - RMSE: 6.97090408549674e6 m, Min: 1298.1886544400825 m, Max: 1.709779928735959e7 m
+    Linearized KS Sigma Points - RMSE: 8.769755584352713e6 m, Min: 1295.0759554805952 m, Max: 1.543814184608864e7 m
+    Linearized KS Dynamics - RMSE: 1.6663192155797344e7 m, Min: 1352.5810153862215 m, Max: 3.784758162671387e7 m
+  Velocity errors:
+    Linearized - RMSE: 3235.134497797656 m/s, Min: 2.177613621333582 m/s, Max: 10012.802281456152 m/s
+    Unscented Transform - RMSE: 309172.1956066592 m/s, Min: 2.1776121080988196 m/s, Max: 2.560514571879351e6 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 1468.49131622858 m/s, Min: 2.177613621333583 m/s, Max: 4604.80832529313 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 1468.4913161979832 m/s, Min: 2.1776136213336037 m/s, Max: 4604.808324578815 m/s
+    Linearized KS Sigma Points - RMSE: 1564.0329392169658 m/s, Min: 2.177613621333647 m/s, Max: 4526.103104710177 m/s
+    Linearized KS Dynamics - RMSE: 3235.1344978885163 m/s, Min: 2.1776136213336312 m/s, Max: 10012.802281438158 m/s
+  Position uncertainty errors:
+    Linearized - RMSE: 5.1455666480317004e7 m, Min: 5.625707862782292 m, Max: 2.3855688816390514e8 m
+    Unscented Transform - RMSE: 3.836187942659286e8 m, Min: 5.626461444509914 m, Max: 3.0791232862202187e9 m
+    Eigen-based Sigma Points (Cartesian) - RMSE: 2.6692583023251635e6 m, Min: 10.320707410108298 m, Max: 6.185349991224445e6 m
+    Eigen-based Sigma Points (KS) - RMSE: 2.6692583019296676e6 m, Min: 10.320830320008099 m, Max: 6.185349988693954e6 m
+    Linearized KS Sigma Points - RMSE: 5.802101953404723e6 m, Min: 14.356871682306519 m, Max: 1.687097317907926e7 m
+    Linearized KS Dynamics - RMSE: 7.623821151650794e6 m, Min: 31.441110677929828 m, Max: 1.8177204320467833e7 m
+  Velocity uncertainty errors:
+    Linearized - RMSE: 23794.90524747453 m/s, Min: 0.1306586775094729 m/s, Max: 167538.14665592703 m/s
+    Unscented Transform - RMSE: 438100.8798673585 m/s, Min: 0.25923985822626605 m/s, Max: 3.6234829241625615e6 m/s
+    Eigen-based Sigma Points (Cartesian) - RMSE: 871.7521056216799 m/s, Min: 0.0010717297412270455 m/s, Max: 1930.7504085352934 m/s
+    Eigen-based Sigma Points (KS) - RMSE: 871.7521056179714 m/s, Min: 0.001071749355674001 m/s, Max: 1930.7504081385237 m/s
+    Linearized KS Sigma Points - RMSE: 709.4684740213407 m/s, Min: 0.2592398583689999 m/s, Max: 1867.0896753603165 m/s
+    Linearized KS Dynamics - RMSE: 2248.817481655916 m/s, Min: 0.2592398583690283 m/s, Max: 12608.94378709831 m/s

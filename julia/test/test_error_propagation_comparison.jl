@@ -126,8 +126,14 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
     # Loop over position uncertainty scenarios
     for σ_pos in position_uncertainties
         # Compute velocity uncertainty from sqrt(GM/(sma + sigma_position))
-        n = sqrt(SIM_PARAMS.GM / sma^3)  # Circular orbit velocity
-        σ_vel = n * σ_pos
+        # n = sqrt(SIM_PARAMS.GM / sma^3)  # Circular orbit velocity
+        # σ_vel = n * σ_pos
+
+        # Compute velocity uncertainty from the Uncertainty Propagation Law
+        # norm(v) = sqrt(GM * (2/norm(r) - 1/a)) = f(norm(v), a)
+        # σ_norm(v) = sqrt( (∂f/∂norm(r))² * σ_norm(r)² + (∂f/∂a)² * σ_a² ), but σ_a = 0
+        # ∂f/∂norm(r) = -GM / (sqrt(GM * (2/norm(r) - 1/a)) * norm(r)²)
+        σ_vel = sqrt((-SIM_PARAMS.GM / (sqrt(SIM_PARAMS.GM * (2 / norm(r_vec_0) - 1 / sma)) * norm(r_vec_0)^2))^2 * σ_pos^2)
 
         println("\n" * "-"^80)
         println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
@@ -213,6 +219,13 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             x_vec_traj_mean_lin_ks_sigma, P_traj_lin_ks_sigma = propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
             println("  Completed: ", length(x_vec_traj_mean_lin_ks_sigma), " states")
 
+            # Linearized KS Dynamics
+            println("\n" * "="^80)
+            println("7. LINEARIZED KS DYNAMICS")
+            println("="^80)
+            x_vec_traj_mean_lin_ks_dyn, P_traj_lin_ks_dyn = propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, sim_params)
+            println("  Completed: ", length(x_vec_traj_mean_lin_ks_dyn), " states")
+
             # Compare against Monte Carlo
             println("\n" * "="^80)
             println("COMPARISON AGAINST MONTE CARLO GROUND TRUTH")
@@ -229,220 +242,131 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 x_vec_traj_mean_eigen_ks, P_traj_eigen_ks)
             metrics_lin_ks_sigma = error_metrics(x_vec_traj_mean_mc, P_traj_mc,
                 x_vec_traj_mean_lin_ks_sigma, P_traj_lin_ks_sigma)
-            N = min(length(x_vec_traj_mean_mc), length(x_vec_traj_mean_lin_cart), length(x_vec_traj_mean_ut_cart), length(x_vec_traj_mean_eigen_cart), length(x_vec_traj_mean_eigen_ks), length(x_vec_traj_mean_lin_ks_sigma))
+            metrics_lin_ks_dyn = error_metrics(x_vec_traj_mean_mc, P_traj_mc,
+                x_vec_traj_mean_lin_ks_dyn, P_traj_lin_ks_dyn)
+            N = min(length(x_vec_traj_mean_mc), length(x_vec_traj_mean_lin_cart), length(x_vec_traj_mean_ut_cart), length(x_vec_traj_mean_eigen_cart), length(x_vec_traj_mean_eigen_ks), length(x_vec_traj_mean_lin_ks_sigma), length(x_vec_traj_mean_lin_ks_dyn))
 
             # Print position errors
             println("\nPosition errors (vs Monte Carlo):")
             println("  Linearized Covariance Propagation (Cartesian):")
-            println("    RMS position error: ", metrics_lin_cart.pos_rms, " m")
-            println("    Min position error: ", metrics_lin_cart.pos_min, " m")
-            println("    Max position error: ", metrics_lin_cart.pos_max, " m")
+            println("    RMSE = ", metrics_lin_cart.pos_rmse, " m, Min = ", metrics_lin_cart.pos_min, " m, Max = ", metrics_lin_cart.pos_max, " m")
             println("  Unscented Transform (Cartesian):")
-            println("    RMS position error: ", metrics_ut_cart.pos_rms, " m")
-            println("    Min position error: ", metrics_ut_cart.pos_min, " m")
-            println("    Max position error: ", metrics_ut_cart.pos_max, " m")
+            println("    RMSE = ", metrics_ut_cart.pos_rmse, " m, Min = ", metrics_ut_cart.pos_min, " m, Max = ", metrics_ut_cart.pos_max, " m")
             println("  Eigen-based Sigma Points (Cartesian):")
-            println("    RMS position error: ", metrics_eigen_cart.pos_rms, " m")
-            println("    Min position error: ", metrics_eigen_cart.pos_min, " m")
-            println("    Max position error: ", metrics_eigen_cart.pos_max, " m")
+            println("    RMSE = ", metrics_eigen_cart.pos_rmse, " m, Min = ", metrics_eigen_cart.pos_min, " m, Max = ", metrics_eigen_cart.pos_max, " m")
             println("  Eigen-based Sigma Points (KS):")
-            println("    RMS position error: ", metrics_eigen_ks.pos_rms, " m")
-            println("    Min position error: ", metrics_eigen_ks.pos_min, " m")
-            println("    Max position error: ", metrics_eigen_ks.pos_max, " m")
+            println("    RMSE = ", metrics_eigen_ks.pos_rmse, " m, Min = ", metrics_eigen_ks.pos_min, " m, Max = ", metrics_eigen_ks.pos_max, " m")
             println("  Linearized KS Sigma Points:")
-            println("    RMS position error: ", metrics_lin_ks_sigma.pos_rms, " m")
-            println("    Min position error: ", metrics_lin_ks_sigma.pos_min, " m")
-            println("    Max position error: ", metrics_lin_ks_sigma.pos_max, " m")
+            println("    RMSE = ", metrics_lin_ks_sigma.pos_rmse, " m, Min = ", metrics_lin_ks_sigma.pos_min, " m, Max = ", metrics_lin_ks_sigma.pos_max, " m")
+            println("  Linearized KS Dynamics:")
+            println("    RMSE = ", metrics_lin_ks_dyn.pos_rmse, " m, Min = ", metrics_lin_ks_dyn.pos_min, " m, Max = ", metrics_lin_ks_dyn.pos_max, " m")
 
             # Print velocity errors
             println("\nVelocity errors (vs Monte Carlo):")
             println("  Linearized Covariance Propagation (Cartesian):")
-            println("    RMS velocity error: ", metrics_lin_cart.vel_rms, " m/s")
-            println("    Min velocity error: ", metrics_lin_cart.vel_min, " m/s")
-            println("    Max velocity error: ", metrics_lin_cart.vel_max, " m/s")
+            println("    RMSE = ", metrics_lin_cart.vel_rmse, " m/s, Min = ", metrics_lin_cart.vel_min, " m/s, Max = ", metrics_lin_cart.vel_max, " m/s")
             println("  Unscented Transform (Cartesian):")
-            println("    RMS velocity error: ", metrics_ut_cart.vel_rms, " m/s")
-            println("    Min velocity error: ", metrics_ut_cart.vel_min, " m/s")
-            println("    Max velocity error: ", metrics_ut_cart.vel_max, " m/s")
+            println("    RMSE = ", metrics_ut_cart.vel_rmse, " m/s, Min = ", metrics_ut_cart.vel_min, " m/s, Max = ", metrics_ut_cart.vel_max, " m/s")
             println("  Eigen-based Sigma Points (Cartesian):")
-            println("    RMS velocity error: ", metrics_eigen_cart.vel_rms, " m/s")
-            println("    Min velocity error: ", metrics_eigen_cart.vel_min, " m/s")
-            println("    Max velocity error: ", metrics_eigen_cart.vel_max, " m/s")
+            println("    RMSE = ", metrics_eigen_cart.vel_rmse, " m/s, Min = ", metrics_eigen_cart.vel_min, " m/s, Max = ", metrics_eigen_cart.vel_max, " m/s")
             println("  Eigen-based Sigma Points (KS):")
-            println("    RMS velocity error: ", metrics_eigen_ks.vel_rms, " m/s")
-            println("    Min velocity error: ", metrics_eigen_ks.vel_min, " m/s")
-            println("    Max velocity error: ", metrics_eigen_ks.vel_max, " m/s")
+            println("    RMSE = ", metrics_eigen_ks.vel_rmse, " m/s, Min = ", metrics_eigen_ks.vel_min, " m/s, Max = ", metrics_eigen_ks.vel_max, " m/s")
             println("  Linearized KS Sigma Points:")
-            println("    RMS velocity error: ", metrics_lin_ks_sigma.vel_rms, " m/s")
-            println("    Min velocity error: ", metrics_lin_ks_sigma.vel_min, " m/s")
-            println("    Max velocity error: ", metrics_lin_ks_sigma.vel_max, " m/s")
+            println("    RMSE = ", metrics_lin_ks_sigma.vel_rmse, " m/s, Min = ", metrics_lin_ks_sigma.vel_min, " m/s, Max = ", metrics_lin_ks_sigma.vel_max, " m/s")
+            println("  Linearized KS Dynamics:")
+            println("    RMSE = ", metrics_lin_ks_dyn.vel_rmse, " m/s, Min = ", metrics_lin_ks_dyn.vel_min, " m/s, Max = ", metrics_lin_ks_dyn.vel_max, " m/s")
 
-            # Print covariance standard deviation errors
-            println("\nCovariance standard deviation errors (vs Monte Carlo):")
+            # Print position and velocity uncertainty errors
+            println("\nPosition uncertainty errors (vs Monte Carlo):")
             println("  Linearized Covariance Propagation (Cartesian):")
-            println("    Position standard deviations:")
-            println("      X: RMSE = ", metrics_lin_cart.cov_pos_rmse[1], " m, Min = ", metrics_lin_cart.cov_pos_min[1], " m, Max = ", metrics_lin_cart.cov_pos_max[1], " m")
-            println("      Y: RMSE = ", metrics_lin_cart.cov_pos_rmse[2], " m, Min = ", metrics_lin_cart.cov_pos_min[2], " m, Max = ", metrics_lin_cart.cov_pos_max[2], " m")
-            println("      Z: RMSE = ", metrics_lin_cart.cov_pos_rmse[3], " m, Min = ", metrics_lin_cart.cov_pos_min[3], " m, Max = ", metrics_lin_cart.cov_pos_max[3], " m")
-            println("    Velocity standard deviations:")
-            println("      Vx: RMSE = ", metrics_lin_cart.cov_vel_rmse[1], " m/s, Min = ", metrics_lin_cart.cov_vel_min[1], " m/s, Max = ", metrics_lin_cart.cov_vel_max[1], " m/s")
-            println("      Vy: RMSE = ", metrics_lin_cart.cov_vel_rmse[2], " m/s, Min = ", metrics_lin_cart.cov_vel_min[2], " m/s, Max = ", metrics_lin_cart.cov_vel_max[2], " m/s")
-            println("      Vz: RMSE = ", metrics_lin_cart.cov_vel_rmse[3], " m/s, Min = ", metrics_lin_cart.cov_vel_min[3], " m/s, Max = ", metrics_lin_cart.cov_vel_max[3], " m/s")
+            println("    RMSE = ", metrics_lin_cart.pos_uncertainty_rmse, " m, Min = ", metrics_lin_cart.pos_uncertainty_min, " m, Max = ", metrics_lin_cart.pos_uncertainty_max, " m")
             println("  Unscented Transform (Cartesian):")
-            println("    Position standard deviations:")
-            println("      X: RMSE = ", metrics_ut_cart.cov_pos_rmse[1], " m, Min = ", metrics_ut_cart.cov_pos_min[1], " m, Max = ", metrics_ut_cart.cov_pos_max[1], " m")
-            println("      Y: RMSE = ", metrics_ut_cart.cov_pos_rmse[2], " m, Min = ", metrics_ut_cart.cov_pos_min[2], " m, Max = ", metrics_ut_cart.cov_pos_max[2], " m")
-            println("      Z: RMSE = ", metrics_ut_cart.cov_pos_rmse[3], " m, Min = ", metrics_ut_cart.cov_pos_min[3], " m, Max = ", metrics_ut_cart.cov_pos_max[3], " m")
-            println("    Velocity standard deviations:")
-            println("      Vx: RMSE = ", metrics_ut_cart.cov_vel_rmse[1], " m/s, Min = ", metrics_ut_cart.cov_vel_min[1], " m/s, Max = ", metrics_ut_cart.cov_vel_max[1], " m/s")
-            println("      Vy: RMSE = ", metrics_ut_cart.cov_vel_rmse[2], " m/s, Min = ", metrics_ut_cart.cov_vel_min[2], " m/s, Max = ", metrics_ut_cart.cov_vel_max[2], " m/s")
-            println("      Vz: RMSE = ", metrics_ut_cart.cov_vel_rmse[3], " m/s, Min = ", metrics_ut_cart.cov_vel_min[3], " m/s, Max = ", metrics_ut_cart.cov_vel_max[3], " m/s")
+            println("    RMSE = ", metrics_ut_cart.pos_uncertainty_rmse, " m, Min = ", metrics_ut_cart.pos_uncertainty_min, " m, Max = ", metrics_ut_cart.pos_uncertainty_max, " m")
             println("  Eigen-based Sigma Points (Cartesian):")
-            println("    Position standard deviations:")
-            println("      X: RMSE = ", metrics_eigen_cart.cov_pos_rmse[1], " m, Min = ", metrics_eigen_cart.cov_pos_min[1], " m, Max = ", metrics_eigen_cart.cov_pos_max[1], " m")
-            println("      Y: RMSE = ", metrics_eigen_cart.cov_pos_rmse[2], " m, Min = ", metrics_eigen_cart.cov_pos_min[2], " m, Max = ", metrics_eigen_cart.cov_pos_max[2], " m")
-            println("      Z: RMSE = ", metrics_eigen_cart.cov_pos_rmse[3], " m, Min = ", metrics_eigen_cart.cov_pos_min[3], " m, Max = ", metrics_eigen_cart.cov_pos_max[3], " m")
-            println("    Velocity standard deviations:")
-            println("      Vx: RMSE = ", metrics_eigen_cart.cov_vel_rmse[1], " m/s, Min = ", metrics_eigen_cart.cov_vel_min[1], " m/s, Max = ", metrics_eigen_cart.cov_vel_max[1], " m/s")
-            println("      Vy: RMSE = ", metrics_eigen_cart.cov_vel_rmse[2], " m/s, Min = ", metrics_eigen_cart.cov_vel_min[2], " m/s, Max = ", metrics_eigen_cart.cov_vel_max[2], " m/s")
-            println("      Vz: RMSE = ", metrics_eigen_cart.cov_vel_rmse[3], " m/s, Min = ", metrics_eigen_cart.cov_vel_min[3], " m/s, Max = ", metrics_eigen_cart.cov_vel_max[3], " m/s")
+            println("    RMSE = ", metrics_eigen_cart.pos_uncertainty_rmse, " m, Min = ", metrics_eigen_cart.pos_uncertainty_min, " m, Max = ", metrics_eigen_cart.pos_uncertainty_max, " m")
             println("  Eigen-based Sigma Points (KS):")
-            println("    Position standard deviations:")
-            println("      X: RMSE = ", metrics_eigen_ks.cov_pos_rmse[1], " m, Min = ", metrics_eigen_ks.cov_pos_min[1], " m, Max = ", metrics_eigen_ks.cov_pos_max[1], " m")
-            println("      Y: RMSE = ", metrics_eigen_ks.cov_pos_rmse[2], " m, Min = ", metrics_eigen_ks.cov_pos_min[2], " m, Max = ", metrics_eigen_ks.cov_pos_max[2], " m")
-            println("      Z: RMSE = ", metrics_eigen_ks.cov_pos_rmse[3], " m, Min = ", metrics_eigen_ks.cov_pos_min[3], " m, Max = ", metrics_eigen_ks.cov_pos_max[3], " m")
-            println("    Velocity standard deviations:")
-            println("      Vx: RMSE = ", metrics_eigen_ks.cov_vel_rmse[1], " m/s, Min = ", metrics_eigen_ks.cov_vel_min[1], " m/s, Max = ", metrics_eigen_ks.cov_vel_max[1], " m/s")
-            println("      Vy: RMSE = ", metrics_eigen_ks.cov_vel_rmse[2], " m/s, Min = ", metrics_eigen_ks.cov_vel_min[2], " m/s, Max = ", metrics_eigen_ks.cov_vel_max[2], " m/s")
-            println("      Vz: RMSE = ", metrics_eigen_ks.cov_vel_rmse[3], " m/s, Min = ", metrics_eigen_ks.cov_vel_min[3], " m/s, Max = ", metrics_eigen_ks.cov_vel_max[3], " m/s")
+            println("    RMSE = ", metrics_eigen_ks.pos_uncertainty_rmse, " m, Min = ", metrics_eigen_ks.pos_uncertainty_min, " m, Max = ", metrics_eigen_ks.pos_uncertainty_max, " m")
             println("  Linearized KS Sigma Points:")
-            println("    Position standard deviations:")
-            println("      X: RMSE = ", metrics_lin_ks_sigma.cov_pos_rmse[1], " m, Min = ", metrics_lin_ks_sigma.cov_pos_min[1], " m, Max = ", metrics_lin_ks_sigma.cov_pos_max[1], " m")
-            println("      Y: RMSE = ", metrics_lin_ks_sigma.cov_pos_rmse[2], " m, Min = ", metrics_lin_ks_sigma.cov_pos_min[2], " m, Max = ", metrics_lin_ks_sigma.cov_pos_max[2], " m")
-            println("      Z: RMSE = ", metrics_lin_ks_sigma.cov_pos_rmse[3], " m, Min = ", metrics_lin_ks_sigma.cov_pos_min[3], " m, Max = ", metrics_lin_ks_sigma.cov_pos_max[3], " m")
-            println("    Velocity standard deviations:")
-            println("      Vx: RMSE = ", metrics_lin_ks_sigma.cov_vel_rmse[1], " m/s, Min = ", metrics_lin_ks_sigma.cov_vel_min[1], " m/s, Max = ", metrics_lin_ks_sigma.cov_vel_max[1], " m/s")
-            println("      Vy: RMSE = ", metrics_lin_ks_sigma.cov_vel_rmse[2], " m/s, Min = ", metrics_lin_ks_sigma.cov_vel_min[2], " m/s, Max = ", metrics_lin_ks_sigma.cov_vel_max[2], " m/s")
-            println("      Vz: RMSE = ", metrics_lin_ks_sigma.cov_vel_rmse[3], " m/s, Min = ", metrics_lin_ks_sigma.cov_vel_min[3], " m/s, Max = ", metrics_lin_ks_sigma.cov_vel_max[3], " m/s")
+            println("    RMSE = ", metrics_lin_ks_sigma.pos_uncertainty_rmse, " m, Min = ", metrics_lin_ks_sigma.pos_uncertainty_min, " m, Max = ", metrics_lin_ks_sigma.pos_uncertainty_max, " m")
+            println("  Linearized KS Dynamics:")
+            println("    RMSE = ", metrics_lin_ks_dyn.pos_uncertainty_rmse, " m, Min = ", metrics_lin_ks_dyn.pos_uncertainty_min, " m, Max = ", metrics_lin_ks_dyn.pos_uncertainty_max, " m")
 
-            # Compute Frobenius norm error trajectory for plotting
-            cov_error_traj_lin_cart = [norm(P_traj_lin_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_ut_cart = [norm(P_traj_ut_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_eigen_cart = [norm(P_traj_eigen_cart[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_eigen_ks = [norm(P_traj_eigen_ks[i] - P_traj_mc[i]) for i in 1:N]
-            cov_error_traj_lin_ks_sigma = [norm(P_traj_lin_ks_sigma[i] - P_traj_mc[i]) for i in 1:N]
-
-            # Print Frobenius norm covariance error statistics
-            println("\nCovariance Frobenius norm errors (vs Monte Carlo):")
-            cov_frob_rmse_lin_cart = sqrt(sum(cov_error_traj_lin_cart .^ 2) / N)
-            cov_frob_min_lin_cart = minimum(cov_error_traj_lin_cart)
-            cov_frob_max_lin_cart = maximum(cov_error_traj_lin_cart)
+            println("\nVelocity uncertainty errors (vs Monte Carlo):")
             println("  Linearized Covariance Propagation (Cartesian):")
-            println("    RMSE = ", cov_frob_rmse_lin_cart, ", Min = ", cov_frob_min_lin_cart, ", Max = ", cov_frob_max_lin_cart)
-
-            cov_frob_rmse_ut_cart = sqrt(sum(cov_error_traj_ut_cart .^ 2) / N)
-            cov_frob_min_ut_cart = minimum(cov_error_traj_ut_cart)
-            cov_frob_max_ut_cart = maximum(cov_error_traj_ut_cart)
+            println("    RMSE = ", metrics_lin_cart.vel_uncertainty_rmse, " m/s, Min = ", metrics_lin_cart.vel_uncertainty_min, " m/s, Max = ", metrics_lin_cart.vel_uncertainty_max, " m/s")
             println("  Unscented Transform (Cartesian):")
-            println("    RMSE = ", cov_frob_rmse_ut_cart, ", Min = ", cov_frob_min_ut_cart, ", Max = ", cov_frob_max_ut_cart)
-
-            cov_frob_rmse_eigen_cart = sqrt(sum(cov_error_traj_eigen_cart .^ 2) / N)
-            cov_frob_min_eigen_cart = minimum(cov_error_traj_eigen_cart)
-            cov_frob_max_eigen_cart = maximum(cov_error_traj_eigen_cart)
+            println("    RMSE = ", metrics_ut_cart.vel_uncertainty_rmse, " m/s, Min = ", metrics_ut_cart.vel_uncertainty_min, " m/s, Max = ", metrics_ut_cart.vel_uncertainty_max, " m/s")
             println("  Eigen-based Sigma Points (Cartesian):")
-            println("    RMSE = ", cov_frob_rmse_eigen_cart, ", Min = ", cov_frob_min_eigen_cart, ", Max = ", cov_frob_max_eigen_cart)
-
-            cov_frob_rmse_eigen_ks = sqrt(sum(cov_error_traj_eigen_ks .^ 2) / N)
-            cov_frob_min_eigen_ks = minimum(cov_error_traj_eigen_ks)
-            cov_frob_max_eigen_ks = maximum(cov_error_traj_eigen_ks)
+            println("    RMSE = ", metrics_eigen_cart.vel_uncertainty_rmse, " m/s, Min = ", metrics_eigen_cart.vel_uncertainty_min, " m/s, Max = ", metrics_eigen_cart.vel_uncertainty_max, " m/s")
             println("  Eigen-based Sigma Points (KS):")
-            println("    RMSE = ", cov_frob_rmse_eigen_ks, ", Min = ", cov_frob_min_eigen_ks, ", Max = ", cov_frob_max_eigen_ks)
-
-            cov_frob_rmse_lin_ks_sigma = sqrt(sum(cov_error_traj_lin_ks_sigma .^ 2) / N)
-            cov_frob_min_lin_ks_sigma = minimum(cov_error_traj_lin_ks_sigma)
-            cov_frob_max_lin_ks_sigma = maximum(cov_error_traj_lin_ks_sigma)
+            println("    RMSE = ", metrics_eigen_ks.vel_uncertainty_rmse, " m/s, Min = ", metrics_eigen_ks.vel_uncertainty_min, " m/s, Max = ", metrics_eigen_ks.vel_uncertainty_max, " m/s")
             println("  Linearized KS Sigma Points:")
-            println("    RMSE = ", cov_frob_rmse_lin_ks_sigma, ", Min = ", cov_frob_min_lin_ks_sigma, ", Max = ", cov_frob_max_lin_ks_sigma)
-
-            # Extract 3-sigma bounds for plotting (total position/velocity uncertainty)
-            σ_pos_mc = [sqrt(P_traj_mc[i][1, 1] + P_traj_mc[i][2, 2] + P_traj_mc[i][3, 3]) for i in 1:N]
-            σ_pos_lin_cart = [sqrt(P_traj_lin_cart[i][1, 1] + P_traj_lin_cart[i][2, 2] + P_traj_lin_cart[i][3, 3]) for i in 1:N]
-            σ_pos_ut_cart = [sqrt(P_traj_ut_cart[i][1, 1] + P_traj_ut_cart[i][2, 2] + P_traj_ut_cart[i][3, 3]) for i in 1:N]
-            σ_pos_eigen_cart = [sqrt(P_traj_eigen_cart[i][1, 1] + P_traj_eigen_cart[i][2, 2] + P_traj_eigen_cart[i][3, 3]) for i in 1:N]
-            σ_pos_eigen_ks = [sqrt(P_traj_eigen_ks[i][1, 1] + P_traj_eigen_ks[i][2, 2] + P_traj_eigen_ks[i][3, 3]) for i in 1:N]
-            σ_pos_lin_ks_sigma = [sqrt(P_traj_lin_ks_sigma[i][1, 1] + P_traj_lin_ks_sigma[i][2, 2] + P_traj_lin_ks_sigma[i][3, 3]) for i in 1:N]
-
-            σ_vel_mc = [sqrt(P_traj_mc[i][4, 4] + P_traj_mc[i][5, 5] + P_traj_mc[i][6, 6]) for i in 1:N]
-            σ_vel_lin_cart = [sqrt(P_traj_lin_cart[i][4, 4] + P_traj_lin_cart[i][5, 5] + P_traj_lin_cart[i][6, 6]) for i in 1:N]
-            σ_vel_ut_cart = [sqrt(P_traj_ut_cart[i][4, 4] + P_traj_ut_cart[i][5, 5] + P_traj_ut_cart[i][6, 6]) for i in 1:N]
-            σ_vel_eigen_cart = [sqrt(P_traj_eigen_cart[i][4, 4] + P_traj_eigen_cart[i][5, 5] + P_traj_eigen_cart[i][6, 6]) for i in 1:N]
-            σ_vel_eigen_ks = [sqrt(P_traj_eigen_ks[i][4, 4] + P_traj_eigen_ks[i][5, 5] + P_traj_eigen_ks[i][6, 6]) for i in 1:N]
-            σ_vel_lin_ks_sigma = [sqrt(P_traj_lin_ks_sigma[i][4, 4] + P_traj_lin_ks_sigma[i][5, 5] + P_traj_lin_ks_sigma[i][6, 6]) for i in 1:N]
+            println("    RMSE = ", metrics_lin_ks_sigma.vel_uncertainty_rmse, " m/s, Min = ", metrics_lin_ks_sigma.vel_uncertainty_min, " m/s, Max = ", metrics_lin_ks_sigma.vel_uncertainty_max, " m/s")
+            println("  Linearized KS Dynamics:")
+            println("    RMSE = ", metrics_lin_ks_dyn.vel_uncertainty_rmse, " m/s, Min = ", metrics_lin_ks_dyn.vel_uncertainty_min, " m/s, Max = ", metrics_lin_ks_dyn.vel_uncertainty_max, " m/s")
 
             # Create plots
             println("\nGenerating plots...")
 
-            # Plot 1: Mean position comparison
-            p1 = plot(times[1:N] ./ 3600, [x_vec_traj_mean_mc[i][1] for i in 1:N],
-                label="Monte Carlo (x)", linewidth=2, color=:black, linestyle=:solid)
-            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_lin_cart[i][1] for i in 1:N],
-                label="Linearized Covariance (x)", linewidth=2, color=:green, linestyle=:dash)
-            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_ut_cart[i][1] for i in 1:N],
-                label="Unscented Transform (x)", linewidth=2, color=:blue, linestyle=:dot)
-            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_eigen_cart[i][1] for i in 1:N],
-                label="Eigen-based Sigma Points (Cartesian) (x)", linewidth=2, color=:red, linestyle=:dashdot)
-            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_eigen_ks[i][1] for i in 1:N],
-                label="Eigen-based Sigma Points (KS) (x)", linewidth=2, color=:orange, linestyle=:dashdotdot)
-            plot!(p1, times[1:N] ./ 3600, [x_vec_traj_mean_lin_ks_sigma[i][1] for i in 1:N],
-                label="Linearized KS Sigma Points (x)", linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p1, xlabel="Time (hours)", ylabel="Position X (m)",
-                title="Mean Position X Comparison", legend=:topright)
-
-            # Plot 2: Position uncertainty (3-sigma)
-            p2 = plot(times[1:N] ./ 3600, 3.0 .* σ_pos_mc, label="Monte Carlo (3σ)",
-                linewidth=2, color=:black, linestyle=:solid, xlabel="Time (hours)",
-                ylabel="Position Uncertainty (m)", yscale=:log10)
-            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_lin_cart, label="Linearized Covariance (3σ)",
-                linewidth=2, color=:green, linestyle=:dash)
-            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_ut_cart, label="Unscented Transform (3σ)",
+            # Plot 1: Position error
+            p1 = plot(times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="Linearized Covariance",
+                linewidth=2, color=:green, linestyle=:dash, xlabel="Time (hours)",
+                ylabel="Position Error (m)", yscale=:log10, legend=:topleft)
+            plot!(p1, times[1:N] ./ 3600, metrics_ut_cart.pos_errors, label="Unscented Transform",
                 linewidth=2, color=:blue, linestyle=:dot)
-            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_eigen_cart, label="Eigen-based Sigma Points (Cartesian) (3σ)",
+            plot!(p1, times[1:N] ./ 3600, metrics_eigen_cart.pos_errors, label="Eigen-based Sigma Points (Cartesian)",
                 linewidth=2, color=:red, linestyle=:dashdot)
-            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_eigen_ks, label="Eigen-based Sigma Points (KS) (3σ)",
+            plot!(p1, times[1:N] ./ 3600, metrics_eigen_ks.pos_errors, label="Eigen-based Sigma Points (KS)",
                 linewidth=2, color=:orange, linestyle=:dashdotdot)
-            plot!(p2, times[1:N] ./ 3600, 3.0 .* σ_pos_lin_ks_sigma, label="Linearized KS Sigma Points (3σ)",
+            plot!(p1, times[1:N] ./ 3600, metrics_lin_ks_sigma.pos_errors, label="Linearized KS Sigma Points",
                 linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p2, title="Position Uncertainty (3-sigma)", legend=:topright)
+            plot!(p1, times[1:N] ./ 3600, metrics_lin_ks_dyn.pos_errors, label="Linearized KS Dynamics",
+                linewidth=2, color=:brown, linestyle=:dot)
 
-            # Plot 3: Velocity uncertainty (3-sigma)
-            p3 = plot(times[1:N] ./ 3600, 3.0 .* σ_vel_mc, label="Monte Carlo (3σ)",
-                linewidth=2, color=:black, linestyle=:solid, xlabel="Time (hours)",
-                ylabel="Velocity Uncertainty (m/s)", yscale=:log10)
-            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_lin_cart, label="Linearized Covariance (3σ)",
-                linewidth=2, color=:green, linestyle=:dash)
-            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_ut_cart, label="Unscented Transform (3σ)",
+            # Plot 2: Velocity error
+            p2 = plot(times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="Linearized Covariance",
+                linewidth=2, color=:green, linestyle=:dash, xlabel="Time (hours)",
+                ylabel="Velocity Error (m/s)", yscale=:log10, legend=:topleft)
+            plot!(p2, times[1:N] ./ 3600, metrics_ut_cart.vel_errors, label="Unscented Transform",
                 linewidth=2, color=:blue, linestyle=:dot)
-            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_eigen_cart, label="Eigen-based Sigma Points (Cartesian) (3σ)",
+            plot!(p2, times[1:N] ./ 3600, metrics_eigen_cart.vel_errors, label="Eigen-based Sigma Points (Cartesian)",
                 linewidth=2, color=:red, linestyle=:dashdot)
-            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_eigen_ks, label="Eigen-based Sigma Points (KS) (3σ)",
+            plot!(p2, times[1:N] ./ 3600, metrics_eigen_ks.vel_errors, label="Eigen-based Sigma Points (KS)",
                 linewidth=2, color=:orange, linestyle=:dashdotdot)
-            plot!(p3, times[1:N] ./ 3600, 3.0 .* σ_vel_lin_ks_sigma, label="Linearized KS Sigma Points (3σ)",
+            plot!(p2, times[1:N] ./ 3600, metrics_lin_ks_sigma.vel_errors, label="Linearized KS Sigma Points",
                 linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p3, title="Velocity Uncertainty (3-sigma)", legend=:topright)
+            plot!(p2, times[1:N] ./ 3600, metrics_lin_ks_dyn.vel_errors, label="Linearized KS Dynamics",
+                linewidth=2, color=:brown, linestyle=:dot)
 
-            # Plot 4: Covariance error (Frobenius norm)
-            p4 = plot(times[1:N] ./ 3600, cov_error_traj_lin_cart, label="Linearized Covariance",
-                linewidth=2, color=:green, linestyle=:dash)
-            plot!(p4, times[1:N] ./ 3600, cov_error_traj_ut_cart, label="Unscented Transform",
+            # Plot 3: Position uncertainty error
+            p3 = plot(times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="Linearized Covariance",
+                linewidth=2, color=:green, linestyle=:dash, xlabel="Time (hours)",
+                ylabel="Position Uncertainty Error (m)", yscale=:log10, legend=:topleft)
+            plot!(p3, times[1:N] ./ 3600, metrics_ut_cart.pos_uncertainty_errors, label="Unscented Transform",
                 linewidth=2, color=:blue, linestyle=:dot)
-            plot!(p4, times[1:N] ./ 3600, cov_error_traj_eigen_cart, label="Eigen-based Sigma Points (Cartesian)",
+            plot!(p3, times[1:N] ./ 3600, metrics_eigen_cart.pos_uncertainty_errors, label="Eigen-based Sigma Points (Cartesian)",
                 linewidth=2, color=:red, linestyle=:dashdot)
-            plot!(p4, times[1:N] ./ 3600, cov_error_traj_eigen_ks, label="Eigen-based Sigma Points (KS)",
+            plot!(p3, times[1:N] ./ 3600, metrics_eigen_ks.pos_uncertainty_errors, label="Eigen-based Sigma Points (KS)",
                 linewidth=2, color=:orange, linestyle=:dashdotdot)
-            plot!(p4, times[1:N] ./ 3600, cov_error_traj_lin_ks_sigma, label="Linearized KS Sigma Points",
+            plot!(p3, times[1:N] ./ 3600, metrics_lin_ks_sigma.pos_uncertainty_errors, label="Linearized KS Sigma Points",
                 linewidth=2, color=:purple, linestyle=:dashdotdot)
-            plot!(p4, xlabel="Time (hours)", ylabel="Frobenius Norm",
-                title="Covariance Error vs Monte Carlo", legend=:topright, yscale=:log10)
+            plot!(p3, times[1:N] ./ 3600, metrics_lin_ks_dyn.pos_uncertainty_errors, label="Linearized KS Dynamics",
+                linewidth=2, color=:brown, linestyle=:dot)
+
+            # Plot 4: Velocity uncertainty error
+            p4 = plot(times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="Linearized Covariance",
+                linewidth=2, color=:green, linestyle=:dash, xlabel="Time (hours)",
+                ylabel="Velocity Uncertainty Error (m/s)", yscale=:log10, legend=:topleft)
+            plot!(p4, times[1:N] ./ 3600, metrics_ut_cart.vel_uncertainty_errors, label="Unscented Transform",
+                linewidth=2, color=:blue, linestyle=:dot)
+            plot!(p4, times[1:N] ./ 3600, metrics_eigen_cart.vel_uncertainty_errors, label="Eigen-based Sigma Points (Cartesian)",
+                linewidth=2, color=:red, linestyle=:dashdot)
+            plot!(p4, times[1:N] ./ 3600, metrics_eigen_ks.vel_uncertainty_errors, label="Eigen-based Sigma Points (KS)",
+                linewidth=2, color=:orange, linestyle=:dashdotdot)
+            plot!(p4, times[1:N] ./ 3600, metrics_lin_ks_sigma.vel_uncertainty_errors, label="Linearized KS Sigma Points",
+                linewidth=2, color=:purple, linestyle=:dashdotdot)
+            plot!(p4, times[1:N] ./ 3600, metrics_lin_ks_dyn.vel_uncertainty_errors, label="Linearized KS Dynamics",
+                linewidth=2, color=:brown, linestyle=:dot)
 
             # Generate filename based on scenario
             filename = "figs/test_error_propagation_comparison_orb$(orbit_idx)_pos$(Int(σ_pos))m_orbits$(num_orbits).png"
@@ -465,6 +389,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 metrics_eigen_cart=metrics_eigen_cart,
                 metrics_eigen_ks=metrics_eigen_ks,
                 metrics_lin_ks_sigma=metrics_lin_ks_sigma,
+                metrics_lin_ks_dyn=metrics_lin_ks_dyn,
             ))
 
             println("\n" * "="^80)
@@ -484,22 +409,39 @@ for (idx, result) in enumerate(all_results)
     m_eigen_cart = result.metrics_eigen_cart
     m_eigen_ks = result.metrics_eigen_ks
     m_lin_ks_sigma = result.metrics_lin_ks_sigma
+    m_lin_ks_dyn = result.metrics_lin_ks_dyn
     println("\nScenario $idx:")
     println("  Orbit: ", result.orbit)
     println("  Position uncertainty: ", result.σ_pos, " m")
     println("  Velocity uncertainty: ", result.σ_vel, " m/s")
     println("  Number of orbits: ", result.num_orbits)
     println("  Position errors:")
-    println("    Linearized - RMS: ", m_lin.pos_rms, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
-    println("    Unscented Transform - RMS: ", m_ut.pos_rms, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
-    println("    Eigen-based Sigma Points (Cartesian) - RMS: ", m_eigen_cart.pos_rms, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
-    println("    Eigen-based Sigma Points (KS) - RMS: ", m_eigen_ks.pos_rms, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
-    println("    Linearized KS Sigma Points - RMS: ", m_lin_ks_sigma.pos_rms, " m, Min: ", m_lin_ks_sigma.pos_min, " m, Max: ", m_lin_ks_sigma.pos_max, " m")
+    println("    Linearized - RMSE: ", m_lin.pos_rmse, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
+    println("    Unscented Transform - RMSE: ", m_ut.pos_rmse, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
+    println("    Eigen-based Sigma Points (Cartesian) - RMSE: ", m_eigen_cart.pos_rmse, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
+    println("    Eigen-based Sigma Points (KS) - RMSE: ", m_eigen_ks.pos_rmse, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
+    println("    Linearized KS Sigma Points - RMSE: ", m_lin_ks_sigma.pos_rmse, " m, Min: ", m_lin_ks_sigma.pos_min, " m, Max: ", m_lin_ks_sigma.pos_max, " m")
+    println("    Linearized KS Dynamics - RMSE: ", m_lin_ks_dyn.pos_rmse, " m, Min: ", m_lin_ks_dyn.pos_min, " m, Max: ", m_lin_ks_dyn.pos_max, " m")
     println("  Velocity errors:")
-    println("    Linearized - RMS: ", m_lin.vel_rms, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
-    println("    Unscented Transform - RMS: ", m_ut.vel_rms, " m/s, Min: ", m_ut.vel_min, " m/s, Max: ", m_ut.vel_max, " m/s")
-    println("    Eigen-based Sigma Points (Cartesian) - RMS: ", m_eigen_cart.vel_rms, " m/s, Min: ", m_eigen_cart.vel_min, " m/s, Max: ", m_eigen_cart.vel_max, " m/s")
-    println("    Eigen-based Sigma Points (KS) - RMS: ", m_eigen_ks.vel_rms, " m/s, Min: ", m_eigen_ks.vel_min, " m/s, Max: ", m_eigen_ks.vel_max, " m/s")
-    println("    Linearized KS Sigma Points - RMS: ", m_lin_ks_sigma.vel_rms, " m/s, Min: ", m_lin_ks_sigma.vel_min, " m/s, Max: ", m_lin_ks_sigma.vel_max, " m/s")
+    println("    Linearized - RMSE: ", m_lin.vel_rmse, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
+    println("    Unscented Transform - RMSE: ", m_ut.vel_rmse, " m/s, Min: ", m_ut.vel_min, " m/s, Max: ", m_ut.vel_max, " m/s")
+    println("    Eigen-based Sigma Points (Cartesian) - RMSE: ", m_eigen_cart.vel_rmse, " m/s, Min: ", m_eigen_cart.vel_min, " m/s, Max: ", m_eigen_cart.vel_max, " m/s")
+    println("    Eigen-based Sigma Points (KS) - RMSE: ", m_eigen_ks.vel_rmse, " m/s, Min: ", m_eigen_ks.vel_min, " m/s, Max: ", m_eigen_ks.vel_max, " m/s")
+    println("    Linearized KS Sigma Points - RMSE: ", m_lin_ks_sigma.vel_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_min, " m/s, Max: ", m_lin_ks_sigma.vel_max, " m/s")
+    println("    Linearized KS Dynamics - RMSE: ", m_lin_ks_dyn.vel_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_min, " m/s, Max: ", m_lin_ks_dyn.vel_max, " m/s")
+    println("  Position uncertainty errors:")
+    println("    Linearized - RMSE: ", m_lin.pos_uncertainty_rmse, " m, Min: ", m_lin.pos_uncertainty_min, " m, Max: ", m_lin.pos_uncertainty_max, " m")
+    println("    Unscented Transform - RMSE: ", m_ut.pos_uncertainty_rmse, " m, Min: ", m_ut.pos_uncertainty_min, " m, Max: ", m_ut.pos_uncertainty_max, " m")
+    println("    Eigen-based Sigma Points (Cartesian) - RMSE: ", m_eigen_cart.pos_uncertainty_rmse, " m, Min: ", m_eigen_cart.pos_uncertainty_min, " m, Max: ", m_eigen_cart.pos_uncertainty_max, " m")
+    println("    Eigen-based Sigma Points (KS) - RMSE: ", m_eigen_ks.pos_uncertainty_rmse, " m, Min: ", m_eigen_ks.pos_uncertainty_min, " m, Max: ", m_eigen_ks.pos_uncertainty_max, " m")
+    println("    Linearized KS Sigma Points - RMSE: ", m_lin_ks_sigma.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_sigma.pos_uncertainty_min, " m, Max: ", m_lin_ks_sigma.pos_uncertainty_max, " m")
+    println("    Linearized KS Dynamics - RMSE: ", m_lin_ks_dyn.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_dyn.pos_uncertainty_min, " m, Max: ", m_lin_ks_dyn.pos_uncertainty_max, " m")
+    println("  Velocity uncertainty errors:")
+    println("    Linearized - RMSE: ", m_lin.vel_uncertainty_rmse, " m/s, Min: ", m_lin.vel_uncertainty_min, " m/s, Max: ", m_lin.vel_uncertainty_max, " m/s")
+    println("    Unscented Transform - RMSE: ", m_ut.vel_uncertainty_rmse, " m/s, Min: ", m_ut.vel_uncertainty_min, " m/s, Max: ", m_ut.vel_uncertainty_max, " m/s")
+    println("    Eigen-based Sigma Points (Cartesian) - RMSE: ", m_eigen_cart.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_cart.vel_uncertainty_min, " m/s, Max: ", m_eigen_cart.vel_uncertainty_max, " m/s")
+    println("    Eigen-based Sigma Points (KS) - RMSE: ", m_eigen_ks.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_ks.vel_uncertainty_min, " m/s, Max: ", m_eigen_ks.vel_uncertainty_max, " m/s")
+    println("    Linearized KS Sigma Points - RMSE: ", m_lin_ks_sigma.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_sigma.vel_uncertainty_max, " m/s")
+    println("    Linearized KS Dynamics - RMSE: ", m_lin_ks_dyn.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_dyn.vel_uncertainty_max, " m/s")
 end
 

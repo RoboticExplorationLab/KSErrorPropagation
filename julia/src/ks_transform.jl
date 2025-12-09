@@ -9,15 +9,6 @@ function L(y_vec)
         y4 -y3 y2 -y1]
 end
 
-function L_minus(y_vec)
-    y1, y2, y3, y4 = y_vec
-
-    return [y1 -y2 -y3 y4
-        y2 y1 -y4 -y3
-        y3 y4 y1 y2
-        -y4 y3 -y2 y1]
-end
-
 function R(y_vec)
     y1, y2, y3, y4 = y_vec
 
@@ -25,15 +16,6 @@ function R(y_vec)
         y2 -y1 y4 y3
         y3 -y4 -y1 -y2
         y4 y3 -y2 y1]
-end
-
-function R_minus(y_vec)
-    y1, y2, y3, y4 = y_vec
-
-    return [y1 y2 y3 y4
-        y2 -y1 -y4 y3
-        y3 y4 -y1 -y2
-        -y4 y3 -y2 y1]
 end
 
 function position_cartesian_to_ks(r_vec)
@@ -102,28 +84,31 @@ function energy_ks(y_vec, y_vec_prime, GM)
 end
 
 function position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false, reg_param=1e-10)
+    # Projection matrix to project onto the Cartesian space
+    Pi = [I(3) zeros(3, 1)]
+
     # KKT matrix
     function kkt_matrix(y_vec, λ)
-        H = I(4) .+ (R(λ) + R_minus(λ))'
-        A = L(y_vec) + L_minus(y_vec)
+        H = I(4) .+ (2 * R(Pi' * λ))'
+        A = 2 * Pi * L(y_vec)
         return [H A';
-            A reg_param * I(4)]
+            A zeros(3, 3)]
     end
 
     # Right-hand side vector
     function rhs(r_vec, y_vec_near, y_vec, λ)
-        b1 = -((y_vec .- y_vec_near) .+ ((L(y_vec) + L_minus(y_vec))'λ))
-        b2 = -(L(y_vec) * y_vec .- [r_vec; 0])
+        b1 = (y_vec .- y_vec_near) .+ ((2 * Pi * L(y_vec))'λ)
+        b2 = Pi * L(y_vec) * y_vec .- r_vec
         b = [b1; b2]
-        return b
+        return -b
     end
 
-    z = [y_vec_near; zeros(4)]
+    z = [y_vec_near; zeros(3)]
     i = 0
     while i < max_iter
         i += 1
-        A = kkt_matrix(z[1:4], z[5:8])
-        b = rhs(r_vec, y_vec_near, z[1:4], z[5:8])
+        A = kkt_matrix(z[1:4], z[5:7])
+        b = rhs(r_vec, y_vec_near, z[1:4], z[5:7])
         Δz_vec = A \ b
         z += Δz_vec
         if norm(Δz_vec) < tol
