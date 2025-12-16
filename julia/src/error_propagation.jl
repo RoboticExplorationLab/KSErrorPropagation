@@ -567,16 +567,63 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     t_bar_scaled_0 = times_scaled[1]
     z_bar_scaled_0 = [y_vec_bar_scaled; y_vec_prime_bar_scaled; h_bar_scaled; t_bar_scaled_0]
 
-    # Step 8: Propagate z_bar and compute state transition matrix Φ(s) = d([y; y'](s))/d([y; y']_0)
+    # Step 8: Propagate z_bar using callback (state only, no STM)
+    # Pre-allocate trajectory storage for state
+    z_bar_traj_scaled = [zeros(10) for k = 1:length(times_scaled)]
+    z_bar_traj_scaled[1] .= z_bar_scaled_0
+    times_traj_scaled = zeros(length(times_scaled))
+    times_traj_scaled[1] = times_scaled[1]
+    callback_triggered = falses(length(times_scaled))
+    callback_triggered[1] = true  # Initial state is always set
+
+    # Define state-only dynamics function (without STM)
+    function ks_state_dynamics_scaled!(du, u, p, s_scaled)
+        z_scaled = u  # Full state [y; y'; h; t]
+
+        # State derivative: dz_scaled/ds_scaled = f_ks(z_scaled)
+        # Use the actual dynamics function for state propagation
+        ks_state_augmented = ks_dynamics(z_scaled, sim_params, s_scaled)
+        # Time derivative: dt/ds = r = y'y
+        y_vec_current = z_scaled[1:4]
+        t_prime_scaled = y_vec_current'y_vec_current
+        du .= [ks_state_augmented; t_prime_scaled]
+    end
+
+    # Callback to save states at specific real time points
+    function condition!(out, u, s_current_scaled, sol)
+        t_current_scaled = u[10]  # Real time is the 10th element
+        out .= times_scaled .- t_current_scaled
+    end
+
+    function affect!(sol, idx)
+        if idx <= length(times_scaled)
+            z_bar_traj_scaled[idx] .= sol.u
+            times_traj_scaled[idx] = sol.u[10]
+            callback_triggered[idx] = true
+        end
+    end
+
+    cb = VectorContinuousCallback(condition!, affect!, length(times_scaled))
+
+    # Estimate fictitious time span
+    r_vec_norm_0_scaled = y_vec_bar_scaled'y_vec_bar_scaled
+    s_0_scaled = 0.0
+    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled
+
+    # Integrate state-only system
+    prob_state = ODEProblem(ks_state_dynamics_scaled!, z_bar_scaled_0, (s_0_scaled, s_end_scaled), sim_params)
+    sol_state = solve(prob_state, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
+
+    # Step 8b: Propagate STM separately on s (fictitious time)
     # Initialize STM as identity (10x10)
     Φ_yyp_0_scaled = Matrix{Float64}(I, 10, 10)
 
-    # Combine full state and STM into augmented state
+    # Combine state and STM into augmented state for STM propagation
     # State: [y; y'; h; t] (10 states)
     # STM: Φ_{[y;y';h;t]} (10x10 = 100 states)
     augmented_state_0_scaled = [z_bar_scaled_0; vec(Φ_yyp_0_scaled)]  # 10 + 100 = 110 states
 
-    # Define augmented dynamics function
+    # Define augmented dynamics function for STM propagation
     function augmented_ks_dynamics_scaled!(du, u, p, s_scaled)
         z_scaled = u[1:10]  # Full state [y; y'; h; t]
         Φ_vec_scaled = u[11:110]  # STM for [y; y'; h; t] (10x10 = 100 elements)
@@ -638,42 +685,36 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
         du[11:110] = vec(dΦ_yypht_scaled)
     end
 
-    # Pre-allocate trajectory storage
-    z_bar_traj_scaled = [zeros(10) for k = 1:length(times_scaled)]
-    z_bar_traj_scaled[1] .= z_bar_scaled_0
+    # Integrate STM on s (fictitious time)
+    prob_stm = ODEProblem(augmented_ks_dynamics_scaled!, augmented_state_0_scaled, (s_0_scaled, s_end_scaled), sim_params)
+    sol_stm = solve(prob_stm, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol)
+
+    # Match STM points to state points based on closest real time
+    # For each z_bar_traj_scaled[i], find sol_stm.u[j] where sol_stm.u[j][10] is closest to times_traj_scaled[i]
     Φ_traj_scaled = [zeros(10, 10) for k = 1:length(times_scaled)]  # 10x10 STM for [y; y'; h; t]
     Φ_traj_scaled[1] .= Φ_yyp_0_scaled
-    times_traj_scaled = zeros(length(times_scaled))
-    times_traj_scaled[1] = times_scaled[1]
-    callback_triggered = falses(length(times_scaled))
-    callback_triggered[1] = true  # Initial state is always set
 
-    # Callback to save states at specific real time points
-    function condition!(out, u, s_current_scaled, sol)
-        t_current_scaled = u[10]  # Real time is the 10th element
-        out .= times_scaled .- t_current_scaled
-    end
+    for i in 2:length(times_scaled)
+        # Get real time from saved state trajectory
+        t_state = times_traj_scaled[i]
 
-    function affect!(sol, idx)
-        if idx <= length(times_scaled)
-            z_bar_traj_scaled[idx] .= sol.u[1:10]
-            Φ_vec_scaled = sol.u[11:110]  # 10x10 STM
-            Φ_traj_scaled[idx] .= reshape(Φ_vec_scaled, 10, 10)
-            times_traj_scaled[idx] = sol.u[10]
-            callback_triggered[idx] = true
+        # Find STM solution point with closest real time
+        best_j = 1
+        min_time_diff = abs(sol_stm.u[1][10] - t_state)
+
+        for j in 2:length(sol_stm.u)
+            t_stm = sol_stm.u[j][10]
+            time_diff = abs(t_stm - t_state)
+            if time_diff < min_time_diff
+                min_time_diff = time_diff
+                best_j = j
+            end
         end
+
+        # Extract STM from the matched solution point
+        Φ_vec_matched = sol_stm.u[best_j][11:110]
+        Φ_traj_scaled[i] = reshape(Φ_vec_matched, 10, 10)
     end
-
-    cb = VectorContinuousCallback(condition!, affect!, length(times_scaled))
-
-    # Estimate fictitious time span
-    r_vec_norm_0_scaled = y_vec_bar_scaled'y_vec_bar_scaled
-    s_0_scaled = 0.0
-    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled
-
-    # Integrate augmented system
-    prob = ODEProblem(augmented_ks_dynamics_scaled!, augmented_state_0_scaled, (s_0_scaled, s_end_scaled), sim_params)
-    sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, callback=cb)
 
     # Step 9: Propagate covariance: Q(s) = Φ_{[y;y';h;t]}(s) · Q_0 · Φ_{[y;y';h;t]}(s)^T
     # Q is 10x10 covariance for [y; y'; h; t]
@@ -682,6 +723,59 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
 
     for i in 2:length(times_scaled)
         Q_traj_scaled[i] = Φ_traj_scaled[i] * Q_0_scaled * Φ_traj_scaled[i]'
+    end
+
+    # Step 9b: Apply W matrix to "unwarp" time from Q
+    # W(bar_z) transforms Δz to Δz̃ where Δt = 0
+    # Δz̃ = W(bar_z) Δz, where W = I - (∂z/∂s) * (∂s/∂t) * e_t^T
+    # ∂s/∂t = 1/r = 1/(y'y)
+    # ∂z/∂s = [y'; y''; h'; t'] = [y'; y''; h'; r]
+    Q_traj_unwarped_scaled = Vector{Matrix{Float64}}(undef, length(times_scaled))
+
+    for i in 1:length(times_scaled)
+        z_bar_i = z_bar_traj_scaled[i]
+        y_vec_i = z_bar_i[1:4]
+        yp_vec_i = z_bar_i[5:8]
+        h_i = z_bar_i[9]
+
+        # Compute r = y'y
+        r_i = y_vec_i'y_vec_i
+
+        # Compute y'' from dynamics
+        ypp_vec_i = (-h_i / 2.0) * y_vec_i
+        h_prime_i = 0.0
+
+        # Add perturbations if needed
+        if sim_params.add_perturbations
+            x_vec_i_scaled = state_ks_to_cartesian([y_vec_i; yp_vec_i])
+            x_vec_i = [x_vec_i_scaled[1:3] * sim_params.r_scale;
+                x_vec_i_scaled[4:6] * sim_params.v_scale]
+            t_current = times_traj_scaled[i] * sim_params.t_scale
+            epoch = sim_params.epoch_0 + t_current
+
+            a_J2_vec = cartesian_J2_perturbation(x_vec_i, t_current, sim_params)
+            a_drag_vec = cartesian_drag_perturbation(x_vec_i, t_current, epoch, sim_params)
+            a_pert_vec = a_J2_vec + a_drag_vec
+            a_pert_vec_scaled = a_pert_vec / sim_params.a_scale
+
+            ypp_vec_i = ypp_vec_i + (r_i / 2.0) * (L(y_vec_i)' * [a_pert_vec_scaled; 0.0])
+            h_prime_i = h_prime_i - 2 * yp_vec_i' * L(y_vec_i)' * [a_pert_vec_scaled; 0.0]
+        end
+
+        # ∂z/∂s = [y'; y''; h'; t'] = [y'; y''; h'; r]
+        dz_ds = [yp_vec_i; ypp_vec_i; h_prime_i; r_i]
+
+        # ∂s/∂t = 1/r
+        ds_dt = 1.0 / r_i  # Avoid division by zero
+
+        # Construct W matrix: W = I - (∂z/∂s) * (∂s/∂t) * e_t^T
+        # e_t is the unit vector for the time component (last element)
+        e_t = zeros(10)
+        e_t[10] = 1.0
+        W = Matrix{Float64}(I, 10, 10) - dz_ds * ds_dt * e_t'
+
+        # Apply W to unwarp time: Q̃ = W Q W^T
+        Q_traj_unwarped_scaled[i] = W * Q_traj_scaled[i] * W'
     end
 
     # Step 11: Convert back to Cartesian for output
@@ -740,7 +834,8 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
         d_rvht_d_yypht = dCartesian_dKS_fd(y_vec_scaled, y_vec_prime_scaled, h_scaled, t_scaled)
 
         # Map from Q (which is for [y; y'; h; t]) to augmented Cartesian ([r; v; h; t])
-        P_scaled = d_rvht_d_yypht * Q_traj_scaled[i] * d_rvht_d_yypht'
+        # Use unwarped covariance Q_traj_unwarped_scaled instead of Q_traj_scaled
+        P_scaled = d_rvht_d_yypht * Q_traj_unwarped_scaled[i] * d_rvht_d_yypht'
 
         # Unscale covariance
         P_traj[i] = sim_params.S_inv * P_scaled[1:6, 1:6] * sim_params.S_inv'
