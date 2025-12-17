@@ -142,43 +142,53 @@ function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, t
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params; α=1e-3, β=2.0, κ=0.0)
+function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0, κ=0.0)
     # Compute Unscented Transform parameters
-    n = 6  # State dimension
+    n = length(x_vec)
     λ = α^2 * (n + κ) - n  # Scaling parameter
     γ = sqrt(n + λ)  # Scaling factor for sigma points
 
     # Generate sigma points using Cholesky decomposition: P = L * L'
-    L_chol = cholesky(P_0).L
+    L_chol = cholesky(P).L
 
     # Generate 2n+1 sigma points
     num_sigma_points = 2 * n + 1
-    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points = Vector{Vector{Float64}}(undef, num_sigma_points)
 
     # First sigma point is the mean
-    sigma_points_0[1] = copy(x_vec_0)
+    sigma_points[1] = copy(x_vec)
 
     # Remaining 2n sigma points: x ± γ * L_i
+    # where L_i is the i-th column of the Cholesky factor
     for i in 1:n
         col = L_chol[:, i]
-        sigma_points_0[1+i] = x_vec_0 .+ γ .* col
-        sigma_points_0[n+1+i] = x_vec_0 .- γ .* col
+        sigma_points[1+i] = x_vec .+ γ .* col
+        sigma_points[n+1+i] = x_vec .- γ .* col
     end
 
-    # Compute weights
-    # Mean weights
+    # Compute weights for mean
+    # Mean weights: w_m[1] = λ/(n+λ), w_m[i] = 1/(2(n+λ)) for i > 1
     w_m = zeros(num_sigma_points)
     w_m[1] = λ / (n + λ)
     for i in 2:num_sigma_points
         w_m[i] = 1.0 / (2.0 * (n + λ))
     end
 
-    # Covariance weights
+    # Compute weights for covariance
+    # Covariance weights: w_c[1] = λ/(n+λ) + (1-α²+β), w_c[i] = 1/(2(n+λ)) for i > 1
     w_c = zeros(num_sigma_points)
     w_c[1] = λ / (n + λ) + (1 - α^2 + β)
     for i in 2:num_sigma_points
         w_c[i] = 1.0 / (2.0 * (n + λ))
     end
+
+    return sigma_points, w_m, w_c
+end
+
+function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params)
+    # Generate sigma points and weights using Unscented Transform
+    sigma_points_0, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_0, P_0)
+    num_sigma_points = length(sigma_points_0)
 
     # Propagate each sigma point through full nonlinear dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Unscented Transform...")
@@ -214,30 +224,57 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0)
-    Q = eigen_decomp.vectors  # Eigenvectors (columns)
-    λ_eigen = eigen_decomp.values  # Eigenvalues
+function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=true)
+    # Cubature rule (spherical-radial cubature rule)
+    # Uses 2n sigma points with equal weights
+    # This is a third-degree rule (exact for polynomials up to degree 3)
+    n = length(x_vec)  # State dimension
+    sqrt_n = sqrt(n)  # Scaling factor for cubature rule
 
-    # Generate sigma points using eigen-based method
-    n = 6  # State dimension
+    # Generate 2n sigma points (no center point)
     num_sigma_points = 2 * n
-    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points = Vector{Vector{Float64}}(undef, num_sigma_points)
 
-    # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
-    # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
-    for i in 1:n
-        q_i = Q[:, i]  # i-th eigenvector
-        sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
-        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
+    if use_eigendecomposition
+        # Use eigendecomposition: P = Q * Λ * Q'
+        eigen_decomp = eigen(P)
+        Q = eigen_decomp.vectors  # Eigenvectors (columns)
+        λ_eigen = eigen_decomp.values  # Eigenvalues
+
+        # Generate sigma points: x ± sqrt(n) * sqrt(λ_i) * q_i
+        # Note: sqrt(n) * sqrt(λ_i) = sqrt(n * λ_i)
+        for i in 1:n
+            q_i = Q[:, i]  # i-th eigenvector
+            sqrt_λ_i = sqrt(λ_eigen[i])
+            sigma_points[i] = x_vec .+ sqrt_n .* sqrt_λ_i .* q_i
+            sigma_points[n+i] = x_vec .- sqrt_n .* sqrt_λ_i .* q_i
+        end
+    else
+        # Use Cholesky decomposition: P = L * L'
+        L_chol = cholesky(P).L
+
+        # Generate sigma points: x ± sqrt(n) * L_i
+        # where L_i is the i-th column of the Cholesky factor
+        for i in 1:n
+            col = L_chol[:, i]
+            sigma_points[i] = x_vec .+ sqrt_n .* col
+            sigma_points[n+i] = x_vec .- sqrt_n .* col
+        end
     end
 
-    # Compute weights for exact mean and covariance matching
-    w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
+    # Compute weights (equal for both mean and covariance)
+    # Cubature rule uses equal weights: w = 1/(2n)
+    w = 1.0 / (2.0 * n)
     w_m = fill(w, num_sigma_points)
     w_c = fill(w, num_sigma_points)
+
+    return sigma_points, w_m, w_c
+end
+
+function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params)
+    # Generate sigma points and weights using Cubature Rule
+    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+    num_sigma_points = length(sigma_points_0)
 
     # Propagate each sigma point through full nonlinear dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method...")
@@ -274,29 +311,9 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
 end
 
 function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0)
-    Q = eigen_decomp.vectors  # Eigenvectors (columns)
-    λ_eigen = eigen_decomp.values  # Eigenvalues
-
-    # Generate sigma points using eigen-based method
-    n = 6  # State dimension
-    num_sigma_points = 2 * n
-    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
-
-    # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
-    # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
-    for i in 1:n
-        q_i = Q[:, i]  # i-th eigenvector
-        sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
-        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
-    end
-
-    # Compute weights for exact mean and covariance matching
-    w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
-    w_m = fill(w, num_sigma_points)
-    w_c = fill(w, num_sigma_points)
+    # Generate sigma points and weights using Cubature Rule
+    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+    num_sigma_points = length(sigma_points_0)
 
     # Propagate each sigma point through KS dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method (KS dynamics)...")
@@ -333,29 +350,9 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
 end
 
 function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0)
-    Q = eigen_decomp.vectors  # Eigenvectors (columns)
-    λ_eigen = eigen_decomp.values  # Eigenvalues
-
-    # Generate sigma points using eigen-based method
-    n = 6  # State dimension
-    num_sigma_points = 2 * n
-    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
-
-    # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
-    # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
-    for i in 1:n
-        q_i = Q[:, i]  # i-th eigenvector
-        sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
-        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
-    end
-
-    # Compute weights for exact mean and covariance matching
-    w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
-    w_m = fill(w, num_sigma_points)
-    w_c = fill(w, num_sigma_points)
+    # Generate sigma points and weights using Cubature Rule
+    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+    num_sigma_points = length(sigma_points_0)
 
     # Propagate each sigma point (deputy) using linearized KS relative dynamics
     # Note: propagate_ks_relative_dynamics computes the chief (mean) trajectory internally
