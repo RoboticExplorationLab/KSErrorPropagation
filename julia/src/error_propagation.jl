@@ -6,28 +6,21 @@ using DifferentialEquations
 Random.seed!(1234)
 
 function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000)
-    # Scale initial state and covariance for numerical stability
-    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
-    P_0_scaled = sim_params.S * P_0 * sim_params.S'
-
-    # Sample initial states from multivariate Gaussian in scaled coordinates
+    # Sample initial states from multivariate Gaussian
     # Use Cholesky decomposition: if x ~ N(0, I), then L_chol*x + μ ~ N(μ, P) where P = L_chol*L_chol'
-    L_chol_scaled = cholesky(P_0_scaled).L
+    L_chol = cholesky(P_0).L
 
-    # Generate samples in scaled coordinates
-    samples_0_scaled = Vector{Vector{Float64}}(undef, num_samples)
+    # Generate samples
+    samples_0 = Vector{Vector{Float64}}(undef, num_samples)
     for i in 1:num_samples
         z = randn(6)  # Standard normal
-        samples_0_scaled[i] = x_vec_0_scaled .+ L_chol_scaled * z
+        samples_0[i] = x_vec_0 .+ L_chol * z
     end
 
-    # Unscale samples for propagation (propagate_cartesian_dynamics expects unscaled input)
-    samples_0 = [sim_params.S_inv * s for s in samples_0_scaled]
-
-    # Pre-allocate trajectory storage (in scaled coordinates for numerical stability)
-    samples_propagated_scaled = Vector{Vector{Vector{Float64}}}(undef, length(times))
+    # Pre-allocate trajectory storage
+    samples_propagated = Vector{Vector{Vector{Float64}}}(undef, length(times))
     for t_idx in 1:length(times)
-        samples_propagated_scaled[t_idx] = Vector{Vector{Float64}}(undef, num_samples)
+        samples_propagated[t_idx] = Vector{Vector{Float64}}(undef, num_samples)
     end
 
     # Propagate each sample
@@ -37,44 +30,40 @@ function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 
             println("    Sample ", i, " / ", num_samples)
         end
 
-        # Propagate sample through full nonlinear dynamics (returns unscaled)
+        # Propagate sample through full nonlinear dynamics
         x_vec_traj_sample, _ = propagate_cartesian_dynamics(sample_0, times, sim_params)
 
-        # Scale propagated states for numerical stability in covariance computation
+        # Store propagated states
         for t_idx in 1:length(times)
-            samples_propagated_scaled[t_idx][i] = sim_params.S * x_vec_traj_sample[t_idx]
+            samples_propagated[t_idx][i] = x_vec_traj_sample[t_idx]
         end
     end
 
     # Pre-allocate mean and covariance storage
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
 
-    # Compute mean and covariance at each time (in scaled coordinates, then unscale)
+    # Compute mean and covariance at each time
     for t_idx in 1:length(times)
-        # Compute mean in scaled coordinates
-        x_mean_scaled = zeros(6)
+        # Compute mean
+        x_mean = zeros(6)
         for i in 1:num_samples
-            x_mean_scaled .+= samples_propagated_scaled[t_idx][i]
+            x_mean .+= samples_propagated[t_idx][i]
         end
-        x_mean_scaled ./= num_samples
+        x_mean ./= num_samples
+        x_vec_traj[t_idx] = x_mean
 
-        # Unscale mean
-        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
-
-        # Compute covariance in scaled coordinates (better numerical stability)
-        P_scaled = zeros(6, 6)
+        # Compute covariance
+        P = zeros(6, 6)
         for i in 1:num_samples
-            diff_scaled = samples_propagated_scaled[t_idx][i] .- x_mean_scaled
-            P_scaled .+= diff_scaled * diff_scaled'
+            diff = samples_propagated[t_idx][i] .- x_mean
+            P .+= diff * diff'
         end
-        P_scaled ./= (num_samples - 1)  # Sample covariance (Bessel's correction)
-
-        # Unscale covariance: P = S_inv * P_scaled * S_inv'
-        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+        P ./= (num_samples - 1)  # Sample covariance (Bessel's correction)
+        P_traj[t_idx] = P
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, times, sim_params)
@@ -84,7 +73,7 @@ function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, t
     P_0_scaled = sim_params.S * P_0 * sim_params.S'
 
     # Step 2: Propagate mean trajectory using full nonlinear dynamics
-    x_vec_traj_mean, _ = propagate_cartesian_dynamics(x_vec_0, times, sim_params)
+    x_vec_traj, _ = propagate_cartesian_dynamics(x_vec_0, times, sim_params)
 
     # Step 3: Create dynamics wrapper in SCALED coordinates for Jacobian computation
     # Wraps cartesian_dynamics! to return the derivative instead of mutating
@@ -150,35 +139,30 @@ function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, t
         P_traj[i] = sim_params.S_inv * P_traj_scaled[i] * sim_params.S_inv'
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params; α=1e-3, β=2.0, κ=0.0)
-    # Scale initial state and covariance for numerical stability
-    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
-    P_0_scaled = sim_params.S * P_0 * sim_params.S'
-
     # Compute Unscented Transform parameters
     n = 6  # State dimension
     λ = α^2 * (n + κ) - n  # Scaling parameter
     γ = sqrt(n + λ)  # Scaling factor for sigma points
 
-    # Generate sigma points
-    # Use Cholesky decomposition: P = L * L'
-    L_chol_scaled = cholesky(P_0_scaled).L
+    # Generate sigma points using Cholesky decomposition: P = L * L'
+    L_chol = cholesky(P_0).L
 
     # Generate 2n+1 sigma points
     num_sigma_points = 2 * n + 1
-    sigma_points_0_scaled = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
 
     # First sigma point is the mean
-    sigma_points_0_scaled[1] = copy(x_vec_0_scaled)
+    sigma_points_0[1] = copy(x_vec_0)
 
     # Remaining 2n sigma points: x ± γ * L_i
     for i in 1:n
-        col = L_chol_scaled[:, i]
-        sigma_points_0_scaled[1+i] = x_vec_0_scaled .+ γ .* col
-        sigma_points_0_scaled[n+1+i] = x_vec_0_scaled .- γ .* col
+        col = L_chol[:, i]
+        sigma_points_0[1+i] = x_vec_0 .+ γ .* col
+        sigma_points_0[n+1+i] = x_vec_0 .- γ .* col
     end
 
     # Compute weights
@@ -196,156 +180,125 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
         w_c[i] = 1.0 / (2.0 * (n + λ))
     end
 
-    # Unscale sigma points for propagation (propagate_cartesian_dynamics expects unscaled input)
-    sigma_points_0 = [sim_params.S_inv * s for s in sigma_points_0_scaled]
-
     # Propagate each sigma point through full nonlinear dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Unscented Transform...")
     sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
 
     for (i, sigma_point_0) in enumerate(sigma_points_0)
-        # Propagate sigma point through full nonlinear dynamics (returns unscaled)
+        # Propagate sigma point through full nonlinear dynamics
         x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_point_0, times, sim_params)
         sigma_points_propagated[i] = x_vec_traj_sigma
     end
 
     # Compute weighted mean and covariance at each time
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
 
     for t_idx in 1:length(times)
-        # Scale propagated sigma points for numerical stability in covariance computation
-        sigma_points_t_scaled = [sim_params.S * sigma_points_propagated[i][t_idx] for i in 1:num_sigma_points]
-
-        # Compute weighted mean in scaled coordinates
-        x_mean_scaled = zeros(6)
+        # Compute weighted mean
+        x_mean = zeros(6)
         for i in 1:num_sigma_points
-            x_mean_scaled .+= w_m[i] .* sigma_points_t_scaled[i]
+            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
         end
+        x_vec_traj[t_idx] = x_mean
 
-        # Unscale mean
-        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
-
-        # Compute weighted covariance in scaled coordinates
-        P_scaled = zeros(6, 6)
+        # Compute weighted covariance
+        P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff_scaled = sigma_points_t_scaled[i] .- x_mean_scaled
-            P_scaled .+= w_c[i] .* (diff_scaled * diff_scaled')
+            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            P .+= w_c[i] .* (diff * diff')
         end
-
-        # Unscale covariance: P = S_inv * P_scaled * S_inv'
-        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+        P_traj[t_idx] = P
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Scale initial state and covariance for numerical stability
-    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
-    P_0_scaled = sim_params.S * P_0 * sim_params.S'
-
-    # Step 1: Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0_scaled)
+    # Compute eigenvalue decomposition: P = Q * Λ * Q'
+    eigen_decomp = eigen(P_0)
     Q = eigen_decomp.vectors  # Eigenvectors (columns)
     λ_eigen = eigen_decomp.values  # Eigenvalues
 
-    # Step 2: Generate sigma points using eigen-based method
+    # Generate sigma points using eigen-based method
     n = 6  # State dimension
     num_sigma_points = 2 * n
-    sigma_points_0_scaled = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
 
     # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
     # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
     for i in 1:n
         q_i = Q[:, i]  # i-th eigenvector
         sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0_scaled[i] = x_vec_0_scaled .+ sqrt_n_λ_i .* q_i
-        sigma_points_0_scaled[n+i] = x_vec_0_scaled .- sqrt_n_λ_i .* q_i
+        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
+        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
     end
 
-    # Step 3: Compute weights for exact mean and covariance matching
+    # Compute weights for exact mean and covariance matching
     w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
     w_m = fill(w, num_sigma_points)
     w_c = fill(w, num_sigma_points)
 
-    # Step 4: Unscale sigma points for propagation (propagate_cartesian_dynamics expects unscaled input)
-    sigma_points_0 = [sim_params.S_inv * s for s in sigma_points_0_scaled]
-
-    # Step 5: Propagate each sigma point through full nonlinear dynamics
+    # Propagate each sigma point through full nonlinear dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method...")
     sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
 
     for (i, sigma_point_0) in enumerate(sigma_points_0)
-        # Propagate sigma point through full nonlinear dynamics (returns unscaled)
+        # Propagate sigma point through full nonlinear dynamics
         x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_point_0, times, sim_params)
         sigma_points_propagated[i] = x_vec_traj_sigma
     end
 
-    # Step 6: Compute weighted mean and covariance at each time
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    # Compute weighted mean and covariance at each time
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
 
     for t_idx in 1:length(times)
-        # Scale propagated sigma points for numerical stability in covariance computation
-        sigma_points_t_scaled = [sim_params.S * sigma_points_propagated[i][t_idx] for i in 1:num_sigma_points]
-
-        # Compute weighted mean in scaled coordinates
-        x_mean_scaled = zeros(6)
+        # Compute weighted mean
+        x_mean = zeros(6)
         for i in 1:num_sigma_points
-            x_mean_scaled .+= w_m[i] .* sigma_points_t_scaled[i]
+            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
         end
+        x_vec_traj[t_idx] = x_mean
 
-        # Unscale mean
-        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
-
-        # Compute weighted covariance in scaled coordinates
-        P_scaled = zeros(6, 6)
+        # Compute weighted covariance
+        P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff_scaled = sigma_points_t_scaled[i] .- x_mean_scaled
-            P_scaled .+= w_c[i] .* (diff_scaled * diff_scaled')
+            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            P .+= w_c[i] .* (diff * diff')
         end
-
-        # Unscale covariance: P = S_inv * P_scaled * S_inv'
-        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+        P_traj[t_idx] = P
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Scale initial state and covariance for numerical stability
-    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
-    P_0_scaled = sim_params.S * P_0 * sim_params.S'
-
-    # Step 1: Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0_scaled)
+    # Compute eigenvalue decomposition: P = Q * Λ * Q'
+    eigen_decomp = eigen(P_0)
     Q = eigen_decomp.vectors  # Eigenvectors (columns)
     λ_eigen = eigen_decomp.values  # Eigenvalues
 
-    # Step 2: Generate sigma points using eigen-based method
+    # Generate sigma points using eigen-based method
     n = 6  # State dimension
     num_sigma_points = 2 * n
-    sigma_points_0_scaled = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
 
     # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
     # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
     for i in 1:n
         q_i = Q[:, i]  # i-th eigenvector
         sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0_scaled[i] = x_vec_0_scaled .+ sqrt_n_λ_i .* q_i
-        sigma_points_0_scaled[n+i] = x_vec_0_scaled .- sqrt_n_λ_i .* q_i
+        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
+        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
     end
 
-    # Step 3: Compute weights for exact mean and covariance matching
+    # Compute weights for exact mean and covariance matching
     w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
     w_m = fill(w, num_sigma_points)
     w_c = fill(w, num_sigma_points)
 
-    # Step 4: Unscale sigma points for propagation (propagate_ks_dynamics expects unscaled input)
-    sigma_points_0 = [sim_params.S_inv * s for s in sigma_points_0_scaled]
-
-    # Step 5: Propagate each sigma point through KS dynamics
+    # Propagate each sigma point through KS dynamics
     println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method (KS dynamics)...")
     sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
 
@@ -355,70 +308,56 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
         sigma_points_propagated[i] = x_vec_traj_sigma
     end
 
-    # Step 6: Compute weighted mean and covariance at each time
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    # Compute weighted mean and covariance at each time
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
 
     for t_idx in 1:length(times)
-        # Scale propagated sigma points for numerical stability in covariance computation
-        sigma_points_t_scaled = [sim_params.S * sigma_points_propagated[i][t_idx] for i in 1:num_sigma_points]
-
-        # Compute weighted mean in scaled coordinates
-        x_mean_scaled = zeros(6)
+        # Compute weighted mean
+        x_mean = zeros(6)
         for i in 1:num_sigma_points
-            x_mean_scaled .+= w_m[i] .* sigma_points_t_scaled[i]
+            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
         end
+        x_vec_traj[t_idx] = x_mean
 
-        # Unscale mean
-        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
-
-        # Compute weighted covariance in scaled coordinates
-        P_scaled = zeros(6, 6)
+        # Compute weighted covariance
+        P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff_scaled = sigma_points_t_scaled[i] .- x_mean_scaled
-            P_scaled .+= w_c[i] .* (diff_scaled * diff_scaled')
+            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            P .+= w_c[i] .* (diff * diff')
         end
-
-        # Unscale covariance: P = S_inv * P_scaled * S_inv'
-        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+        P_traj[t_idx] = P
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Scale initial state and covariance for numerical stability
-    x_vec_0_scaled = [x_vec_0[1:3] / sim_params.r_scale; x_vec_0[4:6] / sim_params.v_scale]
-    P_0_scaled = sim_params.S * P_0 * sim_params.S'
-
-    # Step 1: Compute eigenvalue decomposition: P = Q * Λ * Q'
-    eigen_decomp = eigen(P_0_scaled)
+    # Compute eigenvalue decomposition: P = Q * Λ * Q'
+    eigen_decomp = eigen(P_0)
     Q = eigen_decomp.vectors  # Eigenvectors (columns)
     λ_eigen = eigen_decomp.values  # Eigenvalues
 
-    # Step 2: Generate sigma points using eigen-based method
+    # Generate sigma points using eigen-based method
     n = 6  # State dimension
     num_sigma_points = 2 * n
-    sigma_points_0_scaled = Vector{Vector{Float64}}(undef, num_sigma_points)
+    sigma_points_0 = Vector{Vector{Float64}}(undef, num_sigma_points)
 
     # Generate 2n sigma points: x ± sqrt(n * λ_i) * q_i
     # Using sqrt(n * λ_i) allows us to use equal weights w = 1/(2n) for both mean and covariance
     for i in 1:n
         q_i = Q[:, i]  # i-th eigenvector
         sqrt_n_λ_i = sqrt(n * λ_eigen[i])  # sqrt of n * i-th eigenvalue
-        sigma_points_0_scaled[i] = x_vec_0_scaled .+ sqrt_n_λ_i .* q_i
-        sigma_points_0_scaled[n+i] = x_vec_0_scaled .- sqrt_n_λ_i .* q_i
+        sigma_points_0[i] = x_vec_0 .+ sqrt_n_λ_i .* q_i
+        sigma_points_0[n+i] = x_vec_0 .- sqrt_n_λ_i .* q_i
     end
 
-    # Step 3: Compute weights for exact mean and covariance matching
+    # Compute weights for exact mean and covariance matching
     w = 1.0 / (2 * n)  # Equal weights for both mean and covariance
     w_m = fill(w, num_sigma_points)
     w_c = fill(w, num_sigma_points)
 
-    # Step 4: Unscale sigma points for propagation (propagate_ks_relative_dynamics expects unscaled input)
-    sigma_points_0 = [sim_params.S_inv * s for s in sigma_points_0_scaled]
-
-    # Step 5: Propagate each sigma point (deputy) using linearized KS relative dynamics
+    # Propagate each sigma point (deputy) using linearized KS relative dynamics
     # Note: propagate_ks_relative_dynamics computes the chief (mean) trajectory internally
     println("  Propagating ", num_sigma_points, " sigma points (deputies) via linearized KS relative dynamics...")
     sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
@@ -437,36 +376,29 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
         sigma_points_propagated[i] = x_vec_traj_deputy_i
     end
 
-    # Step 6: Compute weighted mean and covariance at each time
+    # Compute weighted mean and covariance at each time
     # The mean should be the weighted mean of all sigma points (not just the chief)
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times))
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
 
     for t_idx in 1:length(times)
-        # Scale propagated sigma points for numerical stability in covariance computation
-        sigma_points_t_scaled = [sim_params.S * sigma_points_propagated[i][t_idx] for i in 1:num_sigma_points]
-
-        # Compute weighted mean in scaled coordinates
-        x_mean_scaled = zeros(6)
+        # Compute weighted mean
+        x_mean = zeros(6)
         for i in 1:num_sigma_points
-            x_mean_scaled .+= w_m[i] .* sigma_points_t_scaled[i]
+            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
         end
+        x_vec_traj[t_idx] = x_mean
 
-        # Unscale mean
-        x_vec_traj_mean[t_idx] = sim_params.S_inv * x_mean_scaled
-
-        # Compute weighted covariance in scaled coordinates
-        P_scaled = zeros(6, 6)
+        # Compute weighted covariance
+        P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff_scaled = sigma_points_t_scaled[i] .- x_mean_scaled
-            P_scaled .+= w_c[i] .* (diff_scaled * diff_scaled')
+            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            P .+= w_c[i] .* (diff * diff')
         end
-
-        # Unscale covariance: P = S_inv * P_scaled * S_inv'
-        P_traj[t_idx] = sim_params.S_inv * P_scaled * sim_params.S_inv'
+        P_traj[t_idx] = P
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, sim_params)
@@ -779,7 +711,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     end
 
     # Step 11: Convert back to Cartesian for output
-    x_vec_traj_mean = Vector{Vector{Float64}}(undef, length(times_scaled))
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times_scaled))
     P_traj = Vector{Matrix{Float64}}(undef, length(times_scaled))
 
     #=
@@ -829,7 +761,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
 
         # Convert to Cartesian
         x_vec_scaled = state_ks_to_cartesian([y_vec_scaled; y_vec_prime_scaled])
-        x_vec_traj_mean[i] = [x_vec_scaled[1:3] * sim_params.r_scale; x_vec_scaled[4:6] * sim_params.v_scale]
+        x_vec_traj[i] = [x_vec_scaled[1:3] * sim_params.r_scale; x_vec_scaled[4:6] * sim_params.v_scale]
         # d_rvht_d_yypht = dCartesian_dKS(y_vec_scaled, y_vec_prime_scaled)
         d_rvht_d_yypht = dCartesian_dKS_fd(y_vec_scaled, y_vec_prime_scaled, h_scaled, t_scaled)
 
@@ -841,7 +773,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
         P_traj[i] = sim_params.S_inv * P_scaled[1:6, 1:6] * sim_params.S_inv'
     end
 
-    return x_vec_traj_mean, P_traj
+    return x_vec_traj, P_traj
 end
 
 function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
