@@ -214,7 +214,7 @@ function propagate_ks_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, si
         end
     end
 
-    if norm(ks_state_rel_0_scaled[1:4]) > 1e-14
+    if norm(ks_state_rel_0_scaled[1:4]) > 1e-7
         cb = VectorContinuousCallback(condition_separate!, affect_separate!, 2 * length(times_scaled))
     else
         cb = VectorContinuousCallback(condition_together!, affect_together!, length(times_scaled))
@@ -238,5 +238,9 @@ function propagate_ks_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, si
     x_vec_traj_rel = [x_vec_traj_deputy[k][1:6] .- x_vec_traj_chief[k][1:6] for k = 1:length(times_scaled)]
     t_chief_traj = t_chief_traj_scaled * sim_params.t_scale
     t_deputy_traj = t_deputy_traj_scaled * sim_params.t_scale
+
+    if t_chief_traj[end] == 0.0 || t_deputy_traj[end] == 0.0
+        println("\n norm(ks_state_rel_0_scaled[1:4]):", norm(ks_state_rel_0_scaled[1:4]))
+    end
     return x_vec_traj_chief, x_vec_traj_rel, t_chief_traj, t_deputy_traj
 end
