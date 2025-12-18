@@ -186,45 +186,53 @@ function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0
 end
 
 function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params)
-    # Generate sigma points and weights using Unscented Transform
-    sigma_points_0, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_0, P_0)
-    num_sigma_points = length(sigma_points_0)
-
-    # Propagate each sigma point through full nonlinear dynamics
-    println("  Propagating ", num_sigma_points, " sigma points via Unscented Transform...")
-    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
-
-    for (i, sigma_point_0) in enumerate(sigma_points_0)
-        # Propagate sigma point through full nonlinear dynamics
-        x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_point_0, times, sim_params)
-        sigma_points_propagated[i] = x_vec_traj_sigma
-    end
-
-    # Compute weighted mean and covariance at each time
+    # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    x_vec_traj[1] = copy(x_vec_0)
+    P_traj[1] = copy(P_0)
+    x_vec_current = copy(x_vec_0)
+    P_current = copy(P_0)
 
-    for t_idx in 1:length(times)
-        # Compute weighted mean
-        x_mean = zeros(6)
+    # Resample and propagate at each timestep
+    println("  Propagating via Unscented Transform with resampling at each timestep...")
+
+    for t_idx in 1:(length(times)-1)
+        # Generate sigma points from current mean and covariance
+        sigma_points, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_current, P_current)
+        num_sigma_points = length(sigma_points)
+
+        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+
         for i in 1:num_sigma_points
-            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
+            x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
+            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
         end
-        x_vec_traj[t_idx] = x_mean
 
-        # Compute weighted covariance
+        # Compute weighted mean and covariance
+        x_vec = zeros(6)
+        for i in 1:num_sigma_points
+            x_vec .+= w_m[i] .* sigma_points_traj[i]
+        end
+
         P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            diff = sigma_points_traj[i] .- x_vec
             P .+= w_c[i] .* (diff * diff')
         end
-        P_traj[t_idx] = P
+
+        # Store results and update current state for next iteration
+        x_vec_traj[t_idx+1] = x_vec
+        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+        x_vec_current = x_vec
+        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return x_vec_traj, P_traj
 end
 
-function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=true)
+function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=false)
     # Cubature rule (spherical-radial cubature rule)
     # Uses 2n sigma points with equal weights
     # This is a third-degree rule (exact for polynomials up to degree 3)
@@ -272,127 +280,142 @@ function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecompositio
 end
 
 function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Generate sigma points and weights using Cubature Rule
-    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
-    num_sigma_points = length(sigma_points_0)
-
-    # Propagate each sigma point through full nonlinear dynamics
-    println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method...")
-    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
-
-    for (i, sigma_point_0) in enumerate(sigma_points_0)
-        # Propagate sigma point through full nonlinear dynamics
-        x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_point_0, times, sim_params)
-        sigma_points_propagated[i] = x_vec_traj_sigma
-    end
-
-    # Compute weighted mean and covariance at each time
+    # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    x_vec_traj[1] = copy(x_vec_0)
+    P_traj[1] = copy(P_0)
+    x_vec_current = copy(x_vec_0)
+    P_current = copy(P_0)
 
-    for t_idx in 1:length(times)
-        # Compute weighted mean
-        x_mean = zeros(6)
+    # Resample and propagate at each timestep
+    println("  Propagating via Cubature Rule with resampling at each timestep...")
+
+    for t_idx in 1:(length(times)-1)
+        # Generate sigma points from current mean and covariance
+        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+        num_sigma_points = length(sigma_points)
+
+        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+
         for i in 1:num_sigma_points
-            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
+            x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
+            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
         end
-        x_vec_traj[t_idx] = x_mean
 
-        # Compute weighted covariance
+        # Compute weighted mean and covariance
+        x_vec = zeros(6)
+        for i in 1:num_sigma_points
+            x_vec .+= w_m[i] .* sigma_points_traj[i]
+        end
+
         P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            diff = sigma_points_traj[i] .- x_vec
             P .+= w_c[i] .* (diff * diff')
         end
-        P_traj[t_idx] = P
+
+        # Store results and update current state for next iteration
+        x_vec_traj[t_idx+1] = x_vec
+        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+        x_vec_current = x_vec
+        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Generate sigma points and weights using Cubature Rule
-    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
-    num_sigma_points = length(sigma_points_0)
-
-    # Propagate each sigma point through KS dynamics
-    println("  Propagating ", num_sigma_points, " sigma points via Eigen-based method (KS dynamics)...")
-    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
-
-    for (i, sigma_point_0) in enumerate(sigma_points_0)
-        # Propagate sigma point through KS dynamics (returns unscaled Cartesian)
-        x_vec_traj_sigma, _ = propagate_ks_dynamics(sigma_point_0, times, sim_params)
-        sigma_points_propagated[i] = x_vec_traj_sigma
-    end
-
-    # Compute weighted mean and covariance at each time
+    # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    x_vec_traj[1] = copy(x_vec_0)
+    P_traj[1] = copy(P_0)
+    x_vec_current = copy(x_vec_0)
+    P_current = copy(P_0)
 
-    for t_idx in 1:length(times)
-        # Compute weighted mean
-        x_mean = zeros(6)
+    # Resample and propagate at each timestep
+    println("  Propagating via Cubature Rule (KS dynamics) with resampling at each timestep...")
+
+    for t_idx in 1:(length(times)-1)
+        # Generate sigma points from current mean and covariance
+        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+        num_sigma_points = length(sigma_points)
+
+        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+
         for i in 1:num_sigma_points
-            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
+            x_vec_traj_sigma, _ = propagate_ks_dynamics(sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
+            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
         end
-        x_vec_traj[t_idx] = x_mean
 
-        # Compute weighted covariance
+        # Compute weighted mean and covariance
+        x_vec = zeros(6)
+        for i in 1:num_sigma_points
+            x_vec .+= w_m[i] .* sigma_points_traj[i]
+        end
+
         P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            diff = sigma_points_traj[i] .- x_vec
             P .+= w_c[i] .* (diff * diff')
         end
-        P_traj[t_idx] = P
+
+        # Store results and update current state for next iteration
+        x_vec_traj[t_idx+1] = x_vec
+        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+        x_vec_current = x_vec
+        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return x_vec_traj, P_traj
 end
 
 function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
-    # Generate sigma points and weights using Cubature Rule
-    sigma_points_0, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
-    num_sigma_points = length(sigma_points_0)
-
-    # Propagate each sigma point (deputy) using linearized KS relative dynamics
-    # Note: propagate_ks_relative_dynamics computes the chief (mean) trajectory internally
-    println("  Propagating ", num_sigma_points, " sigma points (deputies) via linearized KS relative dynamics...")
-    sigma_points_propagated = Vector{Vector{Vector{Float64}}}(undef, num_sigma_points)
-
-    for (i, sigma_point_0) in enumerate(sigma_points_0)
-        if i % 6 == 0
-            println("    Sigma point ", i, " / ", num_sigma_points)
-        end
-
-        # Propagate using linearized KS relative dynamics
-        # x_vec_0 is the chief (mean), sigma_point_0 is the deputy
-        x_vec_traj_chief_i, x_vec_traj_rel_i, _, _ = propagate_ks_relative_dynamics(x_vec_0, sigma_point_0, times, sim_params)
-
-        # Compute deputy trajectory: deputy = chief + relative
-        x_vec_traj_deputy_i = [x_vec_traj_chief_i[k] + x_vec_traj_rel_i[k] for k in 1:length(times)]
-        sigma_points_propagated[i] = x_vec_traj_deputy_i
-    end
-
-    # Compute weighted mean and covariance at each time
-    # The mean should be the weighted mean of all sigma points (not just the chief)
+    # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
+    x_vec_traj[1] = copy(x_vec_0)
+    P_traj[1] = copy(P_0)
+    x_vec_current = copy(x_vec_0)
+    P_current = copy(P_0)
 
-    for t_idx in 1:length(times)
-        # Compute weighted mean
-        x_mean = zeros(6)
+    # Resample and propagate at each timestep
+    println("  Propagating via Cubature Rule (linearized KS relative dynamics) with resampling at each timestep...")
+
+    for t_idx in 1:(length(times)-1)
+        # Generate sigma points from current mean and covariance
+        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+        num_sigma_points = length(sigma_points)
+
+        # Propagate each sigma point (deputy) from times[t_idx] to times[t_idx+1] using linearized KS relative dynamics
+        # Note: x_vec_current is the chief (mean), sigma_points[i] is the deputy
+        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+
         for i in 1:num_sigma_points
-            x_mean .+= w_m[i] .* sigma_points_propagated[i][t_idx]
+            x_vec_traj_chief_i, x_vec_traj_rel_i, _, _ = propagate_ks_relative_dynamics(x_vec_current, sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
+            sigma_points_traj[i] = x_vec_traj_chief_i[end] + x_vec_traj_rel_i[end]
         end
-        x_vec_traj[t_idx] = x_mean
 
-        # Compute weighted covariance
+        # Compute weighted mean and covariance
+        x_vec = zeros(6)
+        for i in 1:num_sigma_points
+            x_vec .+= w_m[i] .* sigma_points_traj[i]
+        end
+
         P = zeros(6, 6)
         for i in 1:num_sigma_points
-            diff = sigma_points_propagated[i][t_idx] .- x_mean
+            diff = sigma_points_traj[i] .- x_vec
             P .+= w_c[i] .* (diff * diff')
         end
-        P_traj[t_idx] = P
+
+        # Store results and update current state for next iteration
+        x_vec_traj[t_idx+1] = x_vec
+        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+        x_vec_current = x_vec
+        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return x_vec_traj, P_traj

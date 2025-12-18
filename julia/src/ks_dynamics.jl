@@ -81,7 +81,7 @@ function propagate_ks_dynamics(x_vec_0, times, sim_params)
     y_vec_0_scaled = ks_state_augmented_0_scaled[1:4]
     r_vec_norm_0_scaled = y_vec_0_scaled'y_vec_0_scaled
     s_0_scaled = 0.0
-    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled
+    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled * 2.0  # add margin
 
     # ODE problem
     prob = ODEProblem(ks_dynamics!, ks_state_full_0_scaled, (s_0_scaled, s_end_scaled), sim_params)
@@ -224,7 +224,7 @@ function propagate_ks_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, si
     # Estimate fictitious time span
     r_vec_norm_0_scaled = norm(x_vec_chief_0_scaled[1:3])
     s_0_scaled = 0.0
-    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled
+    s_end_scaled = (times_scaled[end] - times_scaled[1]) / r_vec_norm_0_scaled * 2.0  # add margin
 
     # Numerical solver
     prob = ODEProblem(ks_perturbed_relative_dynamics!, z_0, (s_0_scaled, s_end_scaled))
