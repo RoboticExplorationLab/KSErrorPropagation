@@ -395,8 +395,13 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
         sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
 
         for i in 1:num_sigma_points
-            x_vec_traj_chief_i, x_vec_traj_rel_i, _, _ = propagate_ks_relative_dynamics(x_vec_current, sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
+            x_vec_traj_chief_i, x_vec_traj_rel_i, times_traj_chief_i, times_traj_deputy_i = propagate_ks_relative_dynamics(x_vec_current, sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
             sigma_points_traj[i] = x_vec_traj_chief_i[end] + x_vec_traj_rel_i[end]
+
+            if times_traj_chief_i[end] == 0.0 || times_traj_deputy_i[end] == 0.0
+                println("Propagation [", times[t_idx], ", ", times[t_idx+1], "] failed")
+                println("  times_traj_chief_i ", times_traj_chief_i, " times_traj_deputy_i ", times_traj_deputy_i)
+            end
         end
 
         # Compute weighted mean and covariance
@@ -897,4 +902,99 @@ function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
         vel_uncertainty_min=vel_uncertainty_min,
         vel_uncertainty_max=vel_uncertainty_max,
     )
+end
+
+function gaussian_kl_divergence(name, t, x_vec_ref, P_ref, x_vec_test, P_test; use_jitter::Bool=false)
+    # KL divergence between two multivariate Gaussians (reference vs test), i.e.:
+    #   D_KL( N(μ0, Σ0) || N(μ1, Σ1) )
+    #
+    # D_KL = 0.5 * ( tr(Σ1^{-1} Σ0) + (μ1-μ0)' Σ1^{-1} (μ1-μ0) - k + log(det(Σ1)/det(Σ0)) )
+    #
+    # Notes:
+    # - Covariances coming from numerical propagation can become slightly non-symmetric / indefinite.
+    # - We symmetrize and add adaptive diagonal jitter before factoring.
+    μ0 = x_vec_ref
+    Σ0 = P_ref
+    μ1 = x_vec_test
+    Σ1 = P_test
+
+    k = length(μ0)
+
+    # Basic shape checks (fail fast with NaN instead of throwing in plotting code)
+    if length(μ1) != k || size(Σ0, 1) != k || size(Σ0, 2) != k || size(Σ1, 1) != k || size(Σ1, 2) != k
+        println("  ERROR: Gaussian KL divergence: dimension mismatch. Method: ", name, " at time ", t, " s")
+        return NaN
+    end
+
+    # Symmetrize to reduce numerical asymmetry
+    Σ0s = 0.5 * (Σ0 + Σ0')
+    Σ1s = 0.5 * (Σ1 + Σ1')
+
+    # Helper: attempt Cholesky on a symmetrized covariance with increasing jitter.
+    # Returns (chol, Σjittered, used_jitter)
+    function _chol_with_jitter(Σ::AbstractMatrix{<:Real})
+        # Scale jitter based on average diagonal magnitude; keep non-negative baseline
+        diag_mean = sum(abs, diag(Σ)) / max(1, size(Σ, 1))
+        base = max(diag_mean, 1.0)
+        jitter = 0.0
+        Σj = Matrix{Float64}(Σ)
+        I_k = Matrix{Float64}(I, size(Σ, 1), size(Σ, 2))
+
+        # Try without jitter first; if allowed, grow jitter geometrically
+        alphas = use_jitter ?
+                 (0.0, 1e-16, 1e-14, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 1e-1, 1.0) :
+                 (0.0,)
+
+        for α in alphas
+            jitter = α * base
+            Σj = Matrix{Float64}(Σ) .+ jitter .* I_k
+            try
+                return cholesky(Symmetric(Σj)), Σj, jitter
+            catch
+                # keep trying
+            end
+        end
+        return nothing, Σj, jitter
+    end
+
+    # Factor both covariances (Σ0 and Σ1 must be SPD for KL to be finite)
+    chol0, Σ0j, jitter0 = _chol_with_jitter(Σ0s)
+    chol1, Σ1j, jitter1 = _chol_with_jitter(Σ1s)
+
+    if chol0 === nothing || chol1 === nothing
+        println("  ERROR: Gaussian KL divergence: cholesky decomposition failed. Method: ", name, " at time ", t, " s")
+        if chol0 === nothing
+            println("  Σ0 (ref) jitter tried: ", jitter0)
+            println("  P0s: ", Σ0s)
+        end
+        if chol1 === nothing
+            println("  Σ1 (test) jitter tried: ", jitter1)
+            println("  P1s: ", Σ1s)
+        end
+        return NaN
+    end
+
+    # Verbose: report when jitter was required to make covariances SPD
+    if use_jitter && (jitter0 > 0.0 || jitter1 > 0.0)
+        println("  INFO: Gaussian KL divergence: applied jitter. Method: ", name, " at time ", t, " s",
+            " | jitter_ref=", jitter0, " | jitter_test=", jitter1)
+    end
+
+    # log(det(Σ)) from Cholesky: det(Σ) = prod(diag(L))^2
+    logdet0 = 2.0 * sum(log, diag(chol0.L))
+    logdet1 = 2.0 * sum(log, diag(chol1.L))
+
+    # Compute tr(Σ1^{-1} Σ0) via solving Σ1 X = Σ0, then taking tr(X)
+    # Use the Cholesky factorization for stable solves.
+    X = chol1 \ Σ0j
+    tr_term = tr(X)
+
+    # Quadratic term: (μ1-μ0)' Σ1^{-1} (μ1-μ0)
+    δ = Vector{Float64}(μ1 .- μ0)
+    quad_term = dot(δ, chol1 \ δ)
+
+    kl = 0.5 * (tr_term + quad_term - k + (logdet1 - logdet0))
+
+    # Numerical guard: KL should be >= 0, but tiny negatives can happen from rounding.
+    return max(0.0, kl)
 end
