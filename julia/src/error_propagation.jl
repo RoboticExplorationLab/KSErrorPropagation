@@ -801,6 +801,191 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     return x_vec_traj, P_traj
 end
 
+function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=false, verbose::Bool=true)
+    """
+    Rationale:
+    - Draw a large set of samples from the initial Cartesian Gaussian (μ₀, P₀).
+    - Convert samples to KS coordinates and compute KS energy `h` per sample.
+    - Partition samples into uniformly sized energy bins (uniform bin width in `h`); record sample count per bin.
+    - For each bin, compute a Cartesian Gaussian approximation (μ₀,k, P₀,k).
+    - Propagate each bin independently using `propagate_uncertainty_via_ks_sigma_points`,
+    yielding a mean/covariance trajectory per bin (μ_k(t), P_k(t)).
+    - At each time step, draw samples from each bin Gaussian in proportion to its bin sample count,
+    then aggregate the full sample set to estimate the overall mean/covariance at that time.
+    """
+
+    function sample_gaussian(μ::Vector{Float64}, P::Matrix{Float64}, n::Int)
+        L = cholesky(P).L
+        out = Matrix{Float64}(undef, 6, n)
+        for i in 1:n
+            out[:, i] .= μ .+ L * randn(6)
+        end
+        return out
+    end
+
+    function mean_and_cov_from_samples(X::Matrix{Float64})
+        d, N = size(X)
+        μ = vec(sum(X; dims=2) ./ N)
+        P = zeros(d, d)
+        for i in 1:N
+            dx = X[:, i] .- μ
+            P .+= dx * dx'
+        end
+        P ./= (N - 1)
+        return μ, (P + P') / 2.0
+    end
+
+    if verbose
+        println("  Propagating via energy-binned MC -> KS sigma points")
+        println("    num_mc_samples=", num_mc_samples, " num_energy_bins=", num_energy_bins, " drop_edge_bins=", drop_edge_bins)
+    end
+
+    # --- Step 1: Monte Carlo samples at t0 ---
+    X0 = sample_gaussian(Vector{Float64}(x_vec_0), Matrix{Float64}(P_0), num_mc_samples) # 6 x N
+
+    # --- Step 2-4: compute energies, sort, bin, and compute per-bin μ₀,k, P₀,k ---
+    h_vals = Vector{Float64}(undef, num_mc_samples)
+    for i in 1:num_mc_samples
+        h_vals[i] = energy_ks_from_cartesian(vec(X0[:, i]), sim_params.GM)
+    end
+    hmin = minimum(h_vals)
+    hmax = maximum(h_vals)
+    edges = range(hmin, hmax; length=num_energy_bins + 1)
+    edges_vec = collect(edges)
+    # assign each sample to a bin by energy interval (uniform-width bins in h)
+    bin_id = clamp.(searchsortedlast.(Ref(edges_vec), h_vals), 1, num_energy_bins)
+    # counts per energy bin (length == num_energy_bins; zeros allowed)
+    bin_counts = [count(==(k), bin_id) for k in 1:num_energy_bins]
+
+    # thresholds are just the internal edges (for printing/debugging)
+    thresholds = Float64.(edges_vec[2:end-1])
+
+    # Supervisor guidance: optionally drop the leftmost/rightmost energy bins
+    active_bins = collect(1:num_energy_bins)
+    if drop_edge_bins && num_energy_bins >= 2
+        active_bins = collect(2:(num_energy_bins-1))
+    end
+    dropped_bins = setdiff(collect(1:num_energy_bins), active_bins)
+
+    μ0_bins = Vector{Vector{Float64}}(undef, num_energy_bins)
+    P0_bins = Vector{Matrix{Float64}}(undef, num_energy_bins)
+    h_ranges = Vector{Tuple{Float64,Float64}}(undef, num_energy_bins)
+
+    for k in 1:num_energy_bins
+        n_k = bin_counts[k]
+        if n_k == 0
+            μ0_bins[k] = zeros(6)
+            P0_bins[k] = zeros(6, 6)
+            h_ranges[k] = (NaN, NaN)
+            continue
+        end
+
+        idxs = findall(==(k), bin_id)
+        Xk = Matrix{Float64}(X0[:, idxs])
+        μk, Pk = mean_and_cov_from_samples(Xk)
+        μ0_bins[k] = μk
+        P0_bins[k] = Pk
+
+        hk = h_vals[idxs]
+        h_ranges[k] = (minimum(hk), maximum(hk))
+    end
+
+    if verbose
+        println("    energy thresholds (", length(thresholds), "): ", thresholds)
+        for k in 1:num_energy_bins
+            println("    bin ", k, ": n=", bin_counts[k], " h∈[", h_ranges[k][1], ", ", h_ranges[k][2], "]")
+        end
+        if drop_edge_bins && !isempty(dropped_bins)
+            println("    dropped edge bins: ", dropped_bins, " counts=", bin_counts[dropped_bins])
+        end
+    end
+
+    if verbose
+        println("    Per-bin initial covariance diagnostics (P0_bins):")
+        for k in 1:num_energy_bins
+            if bin_counts[k] == 0
+                println("      bin ", k, ": EMPTY")
+                continue
+            end
+            Pk = (P0_bins[k] + P0_bins[k]') / 2.0
+            d = diag(Pk)
+            λmin = minimum(eigvals(Symmetric(Pk)))
+            λmax = maximum(eigvals(Symmetric(Pk)))
+            println("      bin ", k, ": n=", bin_counts[k],
+                " diag[min,max]=[", minimum(d), ", ", maximum(d), "]",
+                " eig[min,max]=[", λmin, ", ", λmax, "]",
+                " sym_err=", norm(P0_bins[k] - P0_bins[k]'))
+        end
+    end
+
+    # --- Step 5: propagate each active bin independently ---
+    x_traj_bins = Vector{Vector{Vector{Float64}}}(undef, num_energy_bins)
+    P_traj_bins = Vector{Vector{Matrix{Float64}}}(undef, num_energy_bins)
+    for k in 1:num_energy_bins
+        if !(k in active_bins)
+            x_traj_bins[k] = Vector{Vector{Float64}}()
+            P_traj_bins[k] = Vector{Matrix{Float64}}()
+            continue
+        end
+        if verbose
+            println("    propagating bin ", k, "/", num_energy_bins, " (n=", bin_counts[k], ", h∈[", h_ranges[k][1], ", ", h_ranges[k][2], "]) ...")
+        end
+        x_traj_bins[k], P_traj_bins[k] = propagate_uncertainty_via_ks_sigma_points(μ0_bins[k], P0_bins[k], times, sim_params)
+    end
+
+    # --- Step 6: aggregate at each time by sampling proportional to bin counts ---
+    # Aggregate only the number of samples that were propagated
+    total_n = sum(bin_counts[active_bins])
+    if total_n == 0
+        error("All bins were dropped or empty; cannot aggregate (total_n=0).")
+    end
+    weights = zeros(num_energy_bins)
+    for k in active_bins
+        weights[k] = bin_counts[k] / total_n
+    end
+    total_draw = total_n
+    n_draw = [round(Int, w * total_draw) for w in weights]
+    while sum(n_draw) < total_draw
+        n_draw[argmax(weights)] += 1
+    end
+    while sum(n_draw) > total_draw
+        n_draw[argmax(n_draw)] -= 1
+    end
+
+    if verbose
+        println("    aggregation draw counts per bin: ", n_draw, " (sum=", sum(n_draw), ", total_draw=", total_draw, ")")
+    end
+
+    T = length(times)
+    x_vec_traj = Vector{Vector{Float64}}(undef, T)
+    P_traj = Vector{Matrix{Float64}}(undef, T)
+
+    for t_idx in 1:T
+        Xagg = Matrix{Float64}(undef, 6, total_draw)
+        col = 0
+        for k in 1:num_energy_bins
+            nk = n_draw[k]
+            if nk <= 0
+                continue
+            end
+            if !(k in active_bins)
+                continue
+            end
+            μk = Vector{Float64}(x_traj_bins[k][t_idx])
+            Pk = Matrix{Float64}(P_traj_bins[k][t_idx])
+            Xk = sample_gaussian(μk, Pk, nk)
+            Xagg[:, (col+1):(col+nk)] .= Xk
+            col += nk
+        end
+
+        μ, P = mean_and_cov_from_samples(Xagg)
+        x_vec_traj[t_idx] = μ
+        P_traj[t_idx] = P
+    end
+
+    return x_vec_traj, P_traj
+end
+
 function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
     # Ensure trajectories have the same length
     N = min(length(x_vec_traj_ref), length(x_vec_traj_test), length(P_traj_ref), length(P_traj_test))

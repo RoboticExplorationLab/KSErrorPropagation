@@ -83,6 +83,11 @@ function energy_ks(y_vec, y_vec_prime, GM)
     return (GM - 2 * (y_vec_prime'y_vec_prime)) / (y_vec'y_vec)
 end
 
+function energy_ks_from_cartesian(x_vec, GM)
+    ks_state = state_cartesian_to_ks(x_vec)
+    return energy_ks(ks_state[1:4], ks_state[5:8], GM)
+end
+
 function position_cartesian_to_ks_via_newton_method(r_vec; y_vec_near=[1.0; 0.0; 0.0; 0.0], tol=1e-12, max_iter=100, return_verbose=false, reg_param=1e-10)
     # Projection matrix to project onto the Cartesian space
     Pi = [I(3) zeros(3, 1)]
