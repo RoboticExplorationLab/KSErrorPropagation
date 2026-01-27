@@ -1,0 +1,3 @@
+[submodule "orbitviz/orbitviz"]
+	path = orbitviz/orbitviz
+	url = https://github.com/joaomarafuzgaspar/orbitviz.git
