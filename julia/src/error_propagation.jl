@@ -5,7 +5,7 @@ using DifferentialEquations
 
 Random.seed!(1234)
 
-function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000)
+function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000; return_samples=false)
     # Sample initial states from multivariate Gaussian
     # Use Cholesky decomposition: if x ~ N(0, I), then L_chol*x + μ ~ N(μ, P) where P = L_chol*L_chol'
     L_chol = cholesky(P_0).L
@@ -60,10 +60,14 @@ function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 
             P .+= diff * diff'
         end
         P ./= (num_samples - 1)  # Sample covariance (Bessel's correction)
-        P_traj[t_idx] = P
+        P_traj[t_idx] = (P + P') / 2.0  # Enforce symmetry
     end
 
-    return x_vec_traj, P_traj
+    if return_samples
+        return x_vec_traj, P_traj, samples_propagated
+    else
+        return x_vec_traj, P_traj
+    end
 end
 
 function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, times, sim_params)
@@ -801,7 +805,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=false, verbose::Bool=true)
+function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true)
     """
     Rationale:
     - Draw a large set of samples from the initial Cartesian Gaussian (μ₀, P₀).
@@ -860,11 +864,59 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     # thresholds are just the internal edges (for printing/debugging)
     thresholds = Float64.(edges_vec[2:end-1])
 
-    # Supervisor guidance: optionally drop the leftmost/rightmost energy bins
+    # Optionally drop the leftmost/rightmost energy bins
     active_bins = collect(1:num_energy_bins)
     if drop_edge_bins && num_energy_bins >= 2
         active_bins = collect(2:(num_energy_bins-1))
     end
+    
+    # Drop bins with 6 or fewer samples, ensuring symmetric removal from both sides
+    min_samples_threshold = 6
+    bins_with_few_samples = [k for k in active_bins if bin_counts[k] <= min_samples_threshold]
+    
+    if !isempty(bins_with_few_samples)
+        # Count consecutive bins with few samples from left side (within active_bins)
+        left_drop_count = 0
+        for k in active_bins
+            if bin_counts[k] <= min_samples_threshold
+                left_drop_count += 1
+            else
+                break
+            end
+        end
+        
+        # Count consecutive bins with few samples from right side (within active_bins)
+        right_drop_count = 0
+        for k in reverse(active_bins)
+            if bin_counts[k] <= min_samples_threshold
+                right_drop_count += 1
+            else
+                break
+            end
+        end
+        
+        # Drop the same number from both sides to avoid bias
+        symmetric_drop_count = max(left_drop_count, right_drop_count)
+        
+        # Update active_bins: remove symmetric drops from edges
+        if symmetric_drop_count > 0 && length(active_bins) >= 2 * symmetric_drop_count
+            # Remove from left (first symmetric_drop_count bins in active_bins)
+            left_dropped = active_bins[1:symmetric_drop_count]
+            # Remove from right (last symmetric_drop_count bins in active_bins)
+            right_dropped = active_bins[(end - symmetric_drop_count + 1):end]
+            symmetric_dropped = union(left_dropped, right_dropped)
+            active_bins = setdiff(active_bins, symmetric_dropped)
+            
+            # Also drop any remaining bins with few samples that weren't already dropped
+            remaining_few_samples = setdiff(bins_with_few_samples, symmetric_dropped)
+            active_bins = setdiff(active_bins, remaining_few_samples)
+        else
+            # Not enough bins for symmetric drop, or no symmetric drops needed
+            # Just drop bins with few samples
+            active_bins = setdiff(active_bins, bins_with_few_samples)
+        end
+    end
+    
     dropped_bins = setdiff(collect(1:num_energy_bins), active_bins)
 
     μ0_bins = Vector{Vector{Float64}}(undef, num_energy_bins)
@@ -895,8 +947,21 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
         for k in 1:num_energy_bins
             println("    bin ", k, ": n=", bin_counts[k], " h∈[", h_ranges[k][1], ", ", h_ranges[k][2], "]")
         end
-        if drop_edge_bins && !isempty(dropped_bins)
-            println("    dropped edge bins: ", dropped_bins, " counts=", bin_counts[dropped_bins])
+        if !isempty(dropped_bins)
+            dropped_edge = Int[]
+            dropped_few_samples = Int[]
+            if drop_edge_bins && num_energy_bins >= 2
+                dropped_edge = [1, num_energy_bins]
+            end
+            min_samples_threshold = 6
+            bins_with_few_samples_all = [k for k in 1:num_energy_bins if bin_counts[k] <= min_samples_threshold]
+            dropped_few_samples = intersect(dropped_bins, bins_with_few_samples_all)
+            if !isempty(dropped_edge) && any(k -> k in dropped_bins, dropped_edge)
+                println("    dropped edge bins: ", dropped_edge, " counts=", bin_counts[dropped_edge])
+            end
+            if !isempty(dropped_few_samples)
+                println("    dropped bins with ≤$(min_samples_threshold) samples: ", dropped_few_samples, " counts=", bin_counts[dropped_few_samples])
+            end
         end
     end
 
