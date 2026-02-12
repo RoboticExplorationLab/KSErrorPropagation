@@ -61,7 +61,8 @@ test_orbits = [
         omega=deg2rad(0.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
-        description="LEO"),
+        description="LEO",
+        id="leo"),
     (name="Molniya orbit (e=0.74, 26600 km semi-major axis)",
         a=26600e3,
         e=0.74,
@@ -69,7 +70,8 @@ test_orbits = [
         omega=deg2rad(270.0),
         RAAN=deg2rad(0.0),
         M=deg2rad(0.0),
-        description="Molniya"),
+        description="Molniya",
+        id="mol"),
 ]
 
 # Function to test a single orbit
