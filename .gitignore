@@ -3,8 +3,8 @@ compare/data/
 
 # Julia
 julia/Manifest.toml
-julia/scripts/
 julia/test_old/
+julia/data/
 
 # Python
 python/**/__pycache__/
