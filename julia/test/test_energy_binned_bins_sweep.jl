@@ -15,77 +15,16 @@ include("../src/ks_dynamics.jl")
 include("../src/error_propagation.jl")
 include("../src/utils.jl")
 
-# Define simulation parameters
-SIM_PARAMS = (
-    # Physical parameters
-    GM=SD.GM_EARTH,
-    R_EARTH=SD.R_EARTH,
-    J2=SD.J2_EARTH,
-    OMEGA_EARTH=SD.OMEGA_EARTH,
-    CD=2.2, # drag coefficient
-    A=1.0, # cross-sectional area (m²)
-    m=100.0, # mass (kg)
-    epoch_0=Epoch(2000, 1, 1, 12, 0, 0), # initial epoch at 0 TBD seconds after J2000
+# Load shared configuration
+include(joinpath(@__DIR__, "..", "config", "default.jl"))
 
-    # Add perturbations
-    add_perturbations=true,
-
-    # Sampling time (time step) in seconds
-    sampling_time=30.0,  # seconds
-
-    # Integrator to use (from DifferentialEquations.jl)
-    integrator=Tsit5,
-
-    # Integrator tolerances
-    abstol=1e-12,      # Absolute tolerance
-    reltol=1e-13,      # Relative tolerance
-
-    # Success criteria thresholds
-    max_pos_error_threshold=1.0,      # meters
-    max_vel_error_threshold=0.01,     # m/s
-
-    # Scaling factors (optional, computed from orbit if not provided)
-    t_scale=nothing,  # time scale (typically orbital period)
-    r_scale=nothing,  # position scale (typically semi-major axis)
-    v_scale=nothing,  # velocity scale
-    a_scale=nothing,  # acceleration scale
-    GM_scale=nothing,  # gravitational constant scale
-)
-
-# Define test orbits
-test_orbits = [
-    (name="Low Earth orbit (e=0.1, 750 km altitude)",
-        a=750e3 + SIM_PARAMS.R_EARTH,
-        e=0.01,
-        i=deg2rad(0.0),
-        omega=deg2rad(0.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="LEO",
-        id="leo"),
-    (name="Molniya orbit (e=0.74, 26600 km semi-major axis)",
-        a=26600e3,
-        e=0.74,
-        i=deg2rad(63.4),
-        omega=deg2rad(270.0),
-        RAAN=deg2rad(0.0),
-        M=deg2rad(0.0),
-        description="Molniya",
-        id="mol"),
-]
-
-# Position uncertainty scenarios (meters)
-position_uncertainties = [1e3, 1e4, 1e5]  # 1km
-
-# Number of orbits to test
-num_orbits_list = [3.0]
-
-# Number of energy bins to test
-num_energy_bins_list = [1, 2, 5, 10, 20, 50]
-
-# Monte Carlo parameters
-num_mc_samples_ground_truth = 5000  # Number of samples in saved MC data file (must match save_monte_carlo_npz.jl)
-num_mc_samples_binning = 5000  # For energy binning method
+# Local aliases (config uses UPPER_CASE constants)
+test_orbits = TEST_ORBITS
+position_uncertainties = POSITION_UNCERTAINTIES
+num_orbits_list = NUM_ORBITS_LIST
+num_energy_bins_list = NUM_ENERGY_BINS_LIST
+num_mc_samples_ground_truth = NUM_MC_SAMPLES
+num_mc_samples_binning = NUM_MC_SAMPLES_BINNING
 
 println("="^80)
 println("ENERGY-BINNED HYBRID PROPAGATION: BINS SWEEP TEST")
@@ -137,8 +76,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
 
     # Loop over position uncertainty scenarios
     for σ_pos in position_uncertainties
-        # Compute velocity uncertainty from the Uncertainty Propagation Law
-        σ_vel = sqrt((-SIM_PARAMS.GM / (sqrt(SIM_PARAMS.GM * (2 / norm(r_vec_0) - 1 / sma)) * norm(r_vec_0)^2))^2 * σ_pos^2)
+        σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
 
         println("\n" * "-"^80)
         println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
@@ -146,8 +84,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
         println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
         println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
 
-        # Initial state covariance
-        P_0 = diagm([σ_pos^2, σ_pos^2, σ_pos^2, σ_vel^2, σ_vel^2, σ_vel^2])
+        P_0 = build_initial_covariance(σ_pos, σ_vel)
 
         # Loop over number of orbits
         for num_orbits in num_orbits_list

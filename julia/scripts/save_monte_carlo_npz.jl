@@ -16,11 +16,11 @@ The script saves data to /data directory at project root with format:
     - x1, x2, ..., xM: individual sample trajectories (N, 6) each, where M is num_samples
     - timestamp: time array in seconds (N,) - compatible with npzLoader which checks for ['timesteps', 'timestamp', 'time']
 
-Configuration can be modified in the main() function:
-    - test_orbits: list of orbits to propagate
-    - position_uncertainties: list of position uncertainties (meters)
-    - num_orbits_list: list of number of orbits to propagate
-    - num_samples: number of Monte Carlo samples
+Configuration is loaded from config/default.jl:
+    - TEST_ORBITS: list of orbits to propagate
+    - POSITION_UNCERTAINTIES: list of position uncertainties (meters)
+    - NUM_ORBITS_LIST: list of number of orbits to propagate
+    - NUM_MC_SAMPLES: number of Monte Carlo samples
 """
 
 using Pkg
@@ -45,76 +45,16 @@ include(joinpath(@__DIR__, "..", "src", "cartesian_dynamics.jl"))
 include(joinpath(@__DIR__, "..", "src", "error_propagation.jl"))
 include(joinpath(@__DIR__, "..", "src", "utils.jl"))
 
-# Define simulation parameters (matching test_error_propagation_comparison.jl)
-SIM_PARAMS = (
-    # Physical parameters
-    GM=SD.GM_EARTH,
-    R_EARTH=SD.R_EARTH,
-    J2=SD.J2_EARTH,
-    OMEGA_EARTH=SD.OMEGA_EARTH,
-    CD=2.2, # drag coefficient
-    A=1.0, # cross-sectional area (m²)
-    m=100.0, # mass (kg)
-    epoch_0=Epoch(2000, 1, 1, 12, 0, 0), # initial epoch at 0 TBD seconds after J2000
-
-    # Add perturbations
-    add_perturbations=true,
-
-    # Sampling time (time step) in seconds
-    sampling_time=30.0,  # seconds
-
-    # Integrator to use (from DifferentialEquations.jl)
-    integrator=Tsit5,
-
-    # Integrator tolerances
-    abstol=1e-12,      # Absolute tolerance
-    reltol=1e-13,      # Relative tolerance
-
-    # Success criteria thresholds
-    max_pos_error_threshold=1.0,      # meters
-    max_vel_error_threshold=0.01,     # m/s
-
-    # Scaling factors (optional, computed from orbit if not provided)
-    t_scale=nothing,  # time scale (typically orbital period)
-    r_scale=nothing,  # position scale (typically semi-major axis)
-    v_scale=nothing,  # velocity scale
-    a_scale=nothing,  # acceleration scale
-    GM_scale=nothing,  # gravitational constant scale
-)
+# Load shared configuration
+include(joinpath(@__DIR__, "..", "config", "default.jl"))
 
 
 function main()
-    # ========== Configuration ==========
-    # Define test orbits (matching test_energy_binned_bins_sweep.jl)
-    test_orbits = [
-        (name="Low Earth orbit (e=0.1, 750 km altitude)",
-            a=750e3 + SIM_PARAMS.R_EARTH,
-            e=0.01,
-            i=deg2rad(0.0),
-            omega=deg2rad(0.0),
-            RAAN=deg2rad(0.0),
-            M=deg2rad(0.0),
-            description="LEO",
-            id="leo"),
-        (name="Molniya orbit (e=0.74, 26600 km semi-major axis)",
-            a=26600e3,
-            e=0.74,
-            i=deg2rad(63.4),
-            omega=deg2rad(270.0),
-            RAAN=deg2rad(0.0),
-            M=deg2rad(0.0),
-            description="Molniya",
-            id="mol"),
-    ]
-    
-    # Position uncertainty scenarios (meters)
-    position_uncertainties = [1e3, 1e4, 1e5]  # 1km, 10km, 100km
-    
-    # Number of orbits to test
-    num_orbits_list = [3.0]
-    
-    # Number of Monte Carlo samples
-    num_samples = 5000
+    # ========== Configuration (from config/default.jl) ==========
+    test_orbits = TEST_ORBITS
+    position_uncertainties = POSITION_UNCERTAINTIES
+    num_orbits_list = NUM_ORBITS_LIST
+    num_samples = NUM_MC_SAMPLES
     
     # Output directory (create data directory at project root)
     project_root = joinpath(@__DIR__, "..")
@@ -168,8 +108,7 @@ function main()
         
         # Loop over position uncertainty scenarios
         for σ_pos in position_uncertainties
-            # Compute velocity uncertainty from the Uncertainty Propagation Law
-            σ_vel = sqrt((-SIM_PARAMS.GM / (sqrt(SIM_PARAMS.GM * (2 / norm(r_vec_0) - 1 / sma)) * norm(r_vec_0)^2))^2 * σ_pos^2)
+            σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
             
             println("\n" * "-"^80)
             println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
@@ -177,8 +116,7 @@ function main()
             println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
             println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
             
-            # Initial state covariance
-            P_0 = diagm([σ_pos^2, σ_pos^2, σ_pos^2, σ_vel^2, σ_vel^2, σ_vel^2])
+            P_0 = build_initial_covariance(σ_pos, σ_vel)
             
             # Loop over number of orbits
             for num_orbits in num_orbits_list
