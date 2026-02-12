@@ -5,6 +5,7 @@ using Plots
 using LinearAlgebra
 using SatelliteDynamics
 using DifferentialEquations
+using NPZ
 
 const SD = SatelliteDynamics
 
@@ -128,12 +129,29 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 end
             end
 
-            # Monte Carlo (ground truth) - don't catch errors for this one, we need it
+            # Monte Carlo (ground truth) - load from npz file
             println("\n" * "="^80)
-            println("1. MONTE CARLO (Ground Truth)")
+            println("1. MONTE CARLO (Ground Truth) - Loading from file")
             println("="^80)
-            x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples)
-            println("  Completed: ", length(x_vec_traj_mean_mc), " states")
+            data_dir = joinpath(@__DIR__, "..", "data")
+            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
+            mc_filepath = joinpath(data_dir, mc_filename)
+            if !isfile(mc_filepath)
+                error("Monte Carlo data file not found: $mc_filepath\nPlease run scripts/save_monte_carlo_npz.jl first to generate the data.")
+            end
+            println("  Loading from: ", mc_filepath)
+            npz_data = NPZ.npzread(mc_filepath)
+            x_array = npz_data["x"]
+            P_array = npz_data["P"]
+            timestamp = npz_data["timestamp"]
+            N_loaded = size(x_array, 1)
+            x_vec_traj_mean_mc = [x_array[i, :] for i in 1:N_loaded]
+            P_traj_mc = [P_array[i, :, :] for i in 1:N_loaded]
+            if length(timestamp) != length(times) || maximum(abs.(timestamp .- times)) > 1e-6
+                println("  Warning: Loaded timestamp differs from expected times. Using loaded timestamp.")
+                times = timestamp
+            end
+            println("  Loaded: ", length(x_vec_traj_mean_mc), " states")
 
             # Linearized Covariance Propagation (Cartesian)
             result_lin_cart = run_method_safely("2. LINEARIZED COVARIANCE PROPAGATION (Cartesian Coordinates)",
