@@ -3,8 +3,6 @@ using LinearAlgebra
 using ForwardDiff
 using DifferentialEquations
 
-Random.seed!(1234)
-
 function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000; return_samples=false)
     # Sample initial states from multivariate Gaussian
     # Use Cholesky decomposition: if x ~ N(0, I), then L_chol*x + μ ~ N(μ, P) where P = L_chol*L_chol'
@@ -189,7 +187,7 @@ function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0
     return sigma_points, w_m, w_c
 end
 
-function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params)
+function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
     # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
@@ -198,8 +196,15 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    # Optional: collect propagated sigma points at every timestep
+    if return_sigma_points
+        sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
+        sp_0, _, _ = generate_sigma_points_via_unscented_transform(x_vec_0, P_0)
+        sigma_points_all[1] = sp_0  # initial sigma points at t=0
+    end
+
     # Resample and propagate at each timestep
-    println("  Propagating via Unscented Transform with resampling at each timestep...")
+    println("  Propagating via Cartesian UT with resampling at each timestep...")
 
     for t_idx in 1:(length(times)-1)
         # Generate sigma points from current mean and covariance
@@ -212,6 +217,11 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
         for i in 1:num_sigma_points
             x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
             sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+        end
+
+        # Store propagated sigma points (before computing mean/cov)
+        if return_sigma_points
+            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
         end
 
         # Compute weighted mean and covariance
@@ -233,7 +243,7 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
         P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
-    return x_vec_traj, P_traj
+    return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
 end
 
 function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=false)
@@ -283,7 +293,7 @@ function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecompositio
     return sigma_points, w_m, w_c
 end
 
-function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params)
+function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
     # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
@@ -292,8 +302,15 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    # Optional: collect propagated sigma points at every timestep
+    if return_sigma_points
+        sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
+        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sigma_points_all[1] = sp_0
+    end
+
     # Resample and propagate at each timestep
-    println("  Propagating via Cubature Rule with resampling at each timestep...")
+    println("  Propagating via Cartesian CKF with resampling at each timestep...")
 
     for t_idx in 1:(length(times)-1)
         # Generate sigma points from current mean and covariance
@@ -308,6 +325,11 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
             sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
         end
 
+        # Store propagated sigma points
+        if return_sigma_points
+            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+        end
+
         # Compute weighted mean and covariance
         x_vec = zeros(6)
         for i in 1:num_sigma_points
@@ -327,10 +349,10 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
         P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
-    return x_vec_traj, P_traj
+    return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
 end
 
-function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_params)
+function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
     # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
@@ -339,8 +361,15 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    # Optional: collect propagated sigma points at every timestep
+    if return_sigma_points
+        sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
+        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sigma_points_all[1] = sp_0
+    end
+
     # Resample and propagate at each timestep
-    println("  Propagating via Cubature Rule (KS dynamics) with resampling at each timestep...")
+    println("  Propagating via KS CKF with resampling at each timestep...")
 
     for t_idx in 1:(length(times)-1)
         # Generate sigma points from current mean and covariance
@@ -355,6 +384,11 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
             sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
         end
 
+        # Store propagated sigma points
+        if return_sigma_points
+            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+        end
+
         # Compute weighted mean and covariance
         x_vec = zeros(6)
         for i in 1:num_sigma_points
@@ -374,10 +408,10 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
         P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
-    return x_vec_traj, P_traj
+    return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
 end
 
-function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params)
+function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
     # Initialize trajectory storage
     x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
     P_traj = Vector{Matrix{Float64}}(undef, length(times))
@@ -386,8 +420,15 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    # Optional: collect propagated sigma points at every timestep
+    if return_sigma_points
+        sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
+        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sigma_points_all[1] = sp_0
+    end
+
     # Resample and propagate at each timestep
-    println("  Propagating via Cubature Rule (linearized KS relative dynamics) with resampling at each timestep...")
+    println("  Propagating via KS Relative CKF with resampling at each timestep...")
 
     for t_idx in 1:(length(times)-1)
         # Generate sigma points from current mean and covariance
@@ -408,6 +449,11 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
             end
         end
 
+        # Store propagated sigma points
+        if return_sigma_points
+            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+        end
+
         # Compute weighted mean and covariance
         x_vec = zeros(6)
         for i in 1:num_sigma_points
@@ -427,7 +473,7 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
         P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
-    return x_vec_traj, P_traj
+    return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
 end
 
 function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, sim_params)
@@ -805,7 +851,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true)
+function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true, return_samples::Bool=false)
     """
     Rationale:
     - Draw a large set of samples from the initial Cartesian Gaussian (μ₀, P₀).
@@ -840,7 +886,7 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     end
 
     if verbose
-        println("  Propagating via energy-binned MC -> KS sigma points")
+        println("  Propagating via Energy-Stratified KS CKF")
         println("    num_mc_samples=", num_mc_samples, " num_energy_bins=", num_energy_bins, " drop_edge_bins=", drop_edge_bins)
     end
 
@@ -869,11 +915,11 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     if drop_edge_bins && num_energy_bins >= 2
         active_bins = collect(2:(num_energy_bins-1))
     end
-    
+
     # Drop bins with 6 or fewer samples, ensuring symmetric removal from both sides
     min_samples_threshold = 6
     bins_with_few_samples = [k for k in active_bins if bin_counts[k] <= min_samples_threshold]
-    
+
     if !isempty(bins_with_few_samples)
         # Count consecutive bins with few samples from left side (within active_bins)
         left_drop_count = 0
@@ -884,7 +930,7 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
                 break
             end
         end
-        
+
         # Count consecutive bins with few samples from right side (within active_bins)
         right_drop_count = 0
         for k in reverse(active_bins)
@@ -894,19 +940,19 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
                 break
             end
         end
-        
+
         # Drop the same number from both sides to avoid bias
         symmetric_drop_count = max(left_drop_count, right_drop_count)
-        
+
         # Update active_bins: remove symmetric drops from edges
         if symmetric_drop_count > 0 && length(active_bins) >= 2 * symmetric_drop_count
             # Remove from left (first symmetric_drop_count bins in active_bins)
             left_dropped = active_bins[1:symmetric_drop_count]
             # Remove from right (last symmetric_drop_count bins in active_bins)
-            right_dropped = active_bins[(end - symmetric_drop_count + 1):end]
+            right_dropped = active_bins[(end-symmetric_drop_count+1):end]
             symmetric_dropped = union(left_dropped, right_dropped)
             active_bins = setdiff(active_bins, symmetric_dropped)
-            
+
             # Also drop any remaining bins with few samples that weren't already dropped
             remaining_few_samples = setdiff(bins_with_few_samples, symmetric_dropped)
             active_bins = setdiff(active_bins, remaining_few_samples)
@@ -916,7 +962,7 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
             active_bins = setdiff(active_bins, bins_with_few_samples)
         end
     end
-    
+
     dropped_bins = setdiff(collect(1:num_energy_bins), active_bins)
 
     μ0_bins = Vector{Vector{Float64}}(undef, num_energy_bins)
@@ -1025,6 +1071,11 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     x_vec_traj = Vector{Vector{Float64}}(undef, T)
     P_traj = Vector{Matrix{Float64}}(undef, T)
 
+    # Optional: collect aggregated samples at every timestep
+    if return_samples
+        samples_all = Vector{Vector{Vector{Float64}}}(undef, T)
+    end
+
     for t_idx in 1:T
         Xagg = Matrix{Float64}(undef, 6, total_draw)
         col = 0
@@ -1046,9 +1097,14 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
         μ, P = mean_and_cov_from_samples(Xagg)
         x_vec_traj[t_idx] = μ
         P_traj[t_idx] = P
+
+        # Store aggregated samples as vector of state vectors
+        if return_samples
+            samples_all[t_idx] = [Xagg[:, j] for j in 1:total_draw]
+        end
     end
 
-    return x_vec_traj, P_traj
+    return return_samples ? (x_vec_traj, P_traj, samples_all) : (x_vec_traj, P_traj)
 end
 
 function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
