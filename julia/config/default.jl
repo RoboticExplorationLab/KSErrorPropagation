@@ -13,8 +13,12 @@
 #   POSITION_UNCERTAINTIES  — vector of position uncertainties in meters
 #   NUM_ORBITS_LIST         — vector of number of orbital periods to propagate
 #   NUM_MC_SAMPLES          — number of MC samples (ground truth / saving)
-#   NUM_MC_SAMPLES_BINNING  — number of MC samples for energy binning method
-#   NUM_ENERGY_BINS_LIST    — vector of bin counts for energy-binned sweep
+#   NUM_MC_SAMPLES_BINNING  — number of MC samples for energy-stratified method
+#   NUM_ENERGY_BINS         — number of energy bins for comparison test (single run)
+#   NUM_ENERGY_BINS_LIST    — vector of bin counts for energy-stratified sweep
+#   RANDOM_SEED             — seed for Random.seed! (reproducible runs)
+#   KS_RELATIVE_STATE_NORM_THRESHOLD — threshold on norm(ks_state_rel[1:4]) to choose
+#       separate vs together callback in KS relative dynamics (default 1e-7)
 #
 # Helper functions:
 #   compute_velocity_uncertainty(σ_pos, sma, r_vec_0, GM) → σ_vel
@@ -115,6 +119,12 @@ end
 
 # ---- Scenario / run parameters ---------------------------------------------
 
+# Reproducibility
+RANDOM_SEED = 1234
+
+# KS relative dynamics: threshold to choose separate vs together integration callback
+KS_RELATIVE_STATE_NORM_THRESHOLD = 1e-7
+
 # Position uncertainty scenarios (meters)
 POSITION_UNCERTAINTIES = [1e3, 1e4, 1e5]  # 1 km, 10 km, 100 km
 
@@ -123,7 +133,8 @@ NUM_ORBITS_LIST = [3.0]
 
 # Monte Carlo sample counts
 NUM_MC_SAMPLES = 5000           # ground truth / save script
-NUM_MC_SAMPLES_BINNING = 5000   # energy binning method
+NUM_MC_SAMPLES_BINNING = 5000   # energy-stratified method
 
-# Energy bins sweep
+# Energy bins: single value for comparison test, list for sweep
+NUM_ENERGY_BINS = 10
 NUM_ENERGY_BINS_LIST = [1, 2, 5, 10, 20, 50]
