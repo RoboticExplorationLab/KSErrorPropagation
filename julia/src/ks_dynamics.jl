@@ -214,7 +214,7 @@ function propagate_ks_relative_dynamics(x_vec_chief_0, x_vec_deputy_0, times, si
         end
     end
 
-    if norm(ks_state_rel_0_scaled[1:4]) > 1e-7
+    if norm(ks_state_rel_0_scaled[1:4]) > KS_RELATIVE_STATE_NORM_THRESHOLD
         cb = VectorContinuousCallback(condition_separate!, affect_separate!, 2 * length(times_scaled))
     else
         cb = VectorContinuousCallback(condition_together!, affect_together!, length(times_scaled))

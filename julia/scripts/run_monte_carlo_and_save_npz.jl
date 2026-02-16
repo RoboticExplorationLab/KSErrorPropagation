@@ -48,6 +48,8 @@ include(joinpath(@__DIR__, "..", "src", "utils.jl"))
 # Load shared configuration
 include(joinpath(@__DIR__, "..", "config", "default.jl"))
 
+using Random
+Random.seed!(RANDOM_SEED)
 
 function main()
     # ========== Configuration (from config/default.jl) ==========
@@ -195,7 +197,8 @@ function main()
                 end
                 
                 # Create output filename (matching test_error_propagation_comparison.jl pattern)
-                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
+                fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
+                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
                 output_path = joinpath(data_dir, output_filename)
                 
                 println("\n" * "="^80)
