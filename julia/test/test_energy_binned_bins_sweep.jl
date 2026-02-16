@@ -18,6 +18,9 @@ include("../src/utils.jl")
 # Load shared configuration
 include(joinpath(@__DIR__, "..", "config", "default.jl"))
 
+using Random
+Random.seed!(RANDOM_SEED)
+
 # Local aliases (config uses UPPER_CASE constants)
 test_orbits = TEST_ORBITS
 position_uncertainties = POSITION_UNCERTAINTIES
@@ -27,9 +30,9 @@ num_mc_samples_ground_truth = NUM_MC_SAMPLES
 num_mc_samples_binning = NUM_MC_SAMPLES_BINNING
 
 println("="^80)
-println("ENERGY-BINNED HYBRID PROPAGATION: BINS SWEEP TEST")
+println("ENERGY-STRATIFIED KS CKF: BINS SWEEP TEST")
 println("="^80)
-println("Comparing Hybrid Energy-Binned KS Sigma Points method against Monte Carlo")
+println("Comparing Energy-Stratified KS CKF method against Monte Carlo")
 println("while varying the number of energy bins")
 println("\nTest configuration:")
 println("  Number of orbits: ", num_orbits_list)
@@ -171,11 +174,11 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             
             println("  Loaded: ", length(x_vec_traj_mean_mc), " states")
 
-            # Test Hybrid Energy-Binned KS Sigma Points method with different numbers of bins
+            # Test Energy-Stratified KS CKF method with different numbers of bins
             results_by_bins = Dict{Int,NamedTuple}()
 
             for num_bins in num_energy_bins_list
-                method_name = "HYBRID ENERGY-BINNED KS SIGMA POINTS (num_bins=$num_bins)"
+                method_name = "ENERGY-STRATIFIED KS CKF (num_bins=$num_bins)"
                 result = run_method_safely(method_name,
                     propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points,
                     x_vec_0, P_0, times, sim_params;
@@ -340,7 +343,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 result = results_by_bins[num_bins]
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing && !result.failed
-                    kl_vals = [gaussian_kl_divergence("Hybrid Energy-Binned (num_bins=$num_bins)", times[i],
+                    kl_vals = [gaussian_kl_divergence("Stratified KS CKF (num_bins=$num_bins)", times[i],
                         x_vec_traj_mean_mc[i], P_traj_mc[i],
                         result.x_vec_traj[i], result.P_traj[i]) for i in 1:N]
                     plot!(p5, times[1:N] ./ 3600, kl_vals,
