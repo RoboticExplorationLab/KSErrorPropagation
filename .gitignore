@@ -5,6 +5,8 @@ compare/data/
 julia/Manifest.toml
 julia/test_old/
 julia/data/
+julia/out/
+julia/logs/
 
 # Python
 python/**/__pycache__/
