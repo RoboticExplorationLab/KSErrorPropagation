@@ -10,7 +10,7 @@ Usage:
     julia scripts/compare_approaches.jl config/sanity_check.jl  # uses custom config
 
 The out/ directory should contain NPZ files produced by
-test/test_error_propagation_comparison.jl with the naming convention:
+scripts/error_propagation_comparison.jl with the naming convention:
     {approach_id}_{orbit_id}_num_orbits{N}_std_pos{σ}m_std_vel{σv}mps.npz
 """
 

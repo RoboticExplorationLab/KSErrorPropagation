@@ -1,16 +1,11 @@
 """
 Script to run Monte Carlo propagation and save results as npz file.
-Similar to test_error_propagation_comparison.jl but saves individual samples.
+Similar to scripts/error_propagation_comparison.jl but saves individual samples.
 
 Usage:
-    # Run as script:
-    julia src/save_monte_carlo_npz.jl
+    julia scripts/run_monte_carlo.jl [config.jl]
 
-    # Or from Julia REPL:
-    include("src/save_monte_carlo_npz.jl")
-    main()  # Call main() explicitly after including
-
-The script saves data to /data directory at project root with format:
+The script saves data to data/ at project root with format:
     - x: mean state vector trajectory (N, 6) where N is number of time steps
     - P: covariance matrix trajectory (N, 6, 6)
     - x1, x2, ..., xM: individual sample trajectories (N, 6) each, where M is num_samples
@@ -196,7 +191,7 @@ function main()
                     end
                 end
                 
-                # Create output filename (matching test_error_propagation_comparison.jl pattern)
+                # Create output filename (matching scripts/error_propagation_comparison.jl pattern)
                 fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
                 output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
                 output_path = joinpath(data_dir, output_filename)

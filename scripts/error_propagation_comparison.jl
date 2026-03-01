@@ -345,10 +345,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print position errors
             println("\nPosition errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  LinCov (Cartesian):")
+                println("  Cartesian LinCov:")
                 println("    RMSE = ", metrics_lin_cart.pos_rmse, " m, Min = ", metrics_lin_cart.pos_min, " m, Max = ", metrics_lin_cart.pos_max, " m")
             else
-                println("  LinCov (Cartesian): FAILED")
+                println("  Cartesian LinCov: FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -390,10 +390,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print velocity errors
             println("\nVelocity errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  LinCov (Cartesian):")
+                println("  Cartesian LinCov:")
                 println("    RMSE = ", metrics_lin_cart.vel_rmse, " m/s, Min = ", metrics_lin_cart.vel_min, " m/s, Max = ", metrics_lin_cart.vel_max, " m/s")
             else
-                println("  LinCov (Cartesian): FAILED")
+                println("  Cartesian LinCov: FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -435,10 +435,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print position and velocity uncertainty errors
             println("\nPosition uncertainty errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  LinCov (Cartesian):")
+                println("  Cartesian LinCov:")
                 println("    RMSE = ", metrics_lin_cart.pos_uncertainty_rmse, " m, Min = ", metrics_lin_cart.pos_uncertainty_min, " m, Max = ", metrics_lin_cart.pos_uncertainty_max, " m")
             else
-                println("  LinCov (Cartesian): FAILED")
+                println("  Cartesian LinCov: FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -479,10 +479,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
 
             println("\nVelocity uncertainty errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  LinCov (Cartesian):")
+                println("  Cartesian LinCov:")
                 println("    RMSE = ", metrics_lin_cart.vel_uncertainty_rmse, " m/s, Min = ", metrics_lin_cart.vel_uncertainty_min, " m/s, Max = ", metrics_lin_cart.vel_uncertainty_max, " m/s")
             else
-                println("  LinCov (Cartesian): FAILED")
+                println("  Cartesian LinCov: FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -538,7 +538,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 1: Position error
             p1 = plot(xlabel="Time (hours)", ylabel="Position Error (m)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="LinCov (Cartesian)",
+                plot!(p1, times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="Cartesian LinCov",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -569,7 +569,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 2: Velocity error
             p2 = plot(xlabel="Time (hours)", ylabel="Velocity Error (m/s)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="LinCov (Cartesian)",
+                plot!(p2, times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="Cartesian LinCov",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -600,7 +600,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 3: Position uncertainty error
             p3 = plot(xlabel="Time (hours)", ylabel="Position Uncertainty Error (m)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="LinCov (Cartesian)",
+                plot!(p3, times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="Cartesian LinCov",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -631,7 +631,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 4: Velocity uncertainty error
             p4 = plot(xlabel="Time (hours)", ylabel="Velocity Uncertainty Error (m/s)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="LinCov (Cartesian)",
+                plot!(p4, times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="Cartesian LinCov",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -662,7 +662,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 5: KL divergence (Gaussian approx) vs Monte Carlo
             p5 = plot(xlabel="Time (hours)", ylabel="KL Divergence", yscale=:log10, legend=:topleft)
             if kl_lin_cart !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_lin_cart, label="LinCov (Cartesian)",
+                plot!(p5, times[1:N] ./ 3600, kl_lin_cart, label="Cartesian LinCov",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if kl_ut_cart !== nothing
@@ -693,7 +693,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Generate filename based on scenario
             figdir = joinpath(@__DIR__, "..", "figs")
             mkpath(figdir)
-            filename = joinpath(figdir, "test_error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).png")
+            filename = joinpath(figdir, "error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).png")
 
             # Combine plots with increased left margin for y-axis labels
             # Use wider size and set margins explicitly to ensure y-labels are visible
@@ -741,7 +741,7 @@ for (idx, result) in enumerate(all_results)
     println("  Velocity uncertainty: ", result.σ_vel, " m/s")
     println("  Number of orbits: ", result.num_orbits)
     println("  Position errors:")
-    println("    LinCov (Cartesian) - RMSE: ", m_lin.pos_rmse, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
+    println("    Cartesian LinCov - RMSE: ", m_lin.pos_rmse, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
     println("    UT (Cartesian) - RMSE: ", m_ut.pos_rmse, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
     println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_rmse, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
     println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_rmse, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
@@ -751,7 +751,7 @@ for (idx, result) in enumerate(all_results)
     end
     println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_rmse, " m, Min: ", m_mc_binned_ks.pos_min, " m, Max: ", m_mc_binned_ks.pos_max, " m")
     println("  Velocity errors:")
-    println("    LinCov (Cartesian) - RMSE: ", m_lin.vel_rmse, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
+    println("    Cartesian LinCov - RMSE: ", m_lin.vel_rmse, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
     println("    UT (Cartesian) - RMSE: ", m_ut.vel_rmse, " m/s, Min: ", m_ut.vel_min, " m/s, Max: ", m_ut.vel_max, " m/s")
     println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_rmse, " m/s, Min: ", m_eigen_cart.vel_min, " m/s, Max: ", m_eigen_cart.vel_max, " m/s")
     println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_rmse, " m/s, Min: ", m_eigen_ks.vel_min, " m/s, Max: ", m_eigen_ks.vel_max, " m/s")
@@ -761,7 +761,7 @@ for (idx, result) in enumerate(all_results)
     end
     println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.vel_rmse, " m/s, Min: ", m_mc_binned_ks.vel_min, " m/s, Max: ", m_mc_binned_ks.vel_max, " m/s")
     println("  Position uncertainty errors:")
-    println("    LinCov (Cartesian) - RMSE: ", m_lin.pos_uncertainty_rmse, " m, Min: ", m_lin.pos_uncertainty_min, " m, Max: ", m_lin.pos_uncertainty_max, " m")
+    println("    Cartesian LinCov - RMSE: ", m_lin.pos_uncertainty_rmse, " m, Min: ", m_lin.pos_uncertainty_min, " m, Max: ", m_lin.pos_uncertainty_max, " m")
     println("    UT (Cartesian) - RMSE: ", m_ut.pos_uncertainty_rmse, " m, Min: ", m_ut.pos_uncertainty_min, " m, Max: ", m_ut.pos_uncertainty_max, " m")
     println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_uncertainty_rmse, " m, Min: ", m_eigen_cart.pos_uncertainty_min, " m, Max: ", m_eigen_cart.pos_uncertainty_max, " m")
     println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_uncertainty_rmse, " m, Min: ", m_eigen_ks.pos_uncertainty_min, " m, Max: ", m_eigen_ks.pos_uncertainty_max, " m")
@@ -771,7 +771,7 @@ for (idx, result) in enumerate(all_results)
     end
     println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_uncertainty_rmse, " m, Min: ", m_mc_binned_ks.pos_uncertainty_min, " m, Max: ", m_mc_binned_ks.pos_uncertainty_max, " m")
     println("  Velocity uncertainty errors:")
-    println("    LinCov (Cartesian) - RMSE: ", m_lin.vel_uncertainty_rmse, " m/s, Min: ", m_lin.vel_uncertainty_min, " m/s, Max: ", m_lin.vel_uncertainty_max, " m/s")
+    println("    Cartesian LinCov - RMSE: ", m_lin.vel_uncertainty_rmse, " m/s, Min: ", m_lin.vel_uncertainty_min, " m/s, Max: ", m_lin.vel_uncertainty_max, " m/s")
     println("    UT (Cartesian) - RMSE: ", m_ut.vel_uncertainty_rmse, " m/s, Min: ", m_ut.vel_uncertainty_min, " m/s, Max: ", m_ut.vel_uncertainty_max, " m/s")
     println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_cart.vel_uncertainty_min, " m/s, Max: ", m_eigen_cart.vel_uncertainty_max, " m/s")
     println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_ks.vel_uncertainty_min, " m/s, Max: ", m_eigen_ks.vel_uncertainty_max, " m/s")

@@ -360,7 +360,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             plot!(p6, num_energy_bins_list, vel_rmse_vals .* 1e3, label="Velocity RMSE (mm/s)", marker=:square, linewidth=2, color=:red)
 
             # Generate filename based on scenario
-            filename = "figs/test_energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_num_bins$(join(num_energy_bins_list, "-")).png"
+            filename = "figs/energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_num_bins$(join(num_energy_bins_list, "-")).png"
 
             # Combine plots
             p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1400, 2400), left_margin=50Plots.px)

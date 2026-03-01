@@ -2,8 +2,8 @@
 # Run a Julia script with output on the terminal and in a timestamped log file.
 #
 # Usage (from repo root):
-#   bash run_with_log.sh scripts/run_monte_carlo_and_save_npz.jl
-#   bash run_with_log.sh scripts/run_monte_carlo_and_save_npz.jl config/fast.jl
+#   bash run_with_log.sh scripts/run_monte_carlo.jl
+#   bash run_with_log.sh scripts/run_monte_carlo.jl config/fast.jl
 #
 # Logs are written to logs/<script_basename>_<YYYY-MM-DD>_<HH-MM-SS>.log
 
