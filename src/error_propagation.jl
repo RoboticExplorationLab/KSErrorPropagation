@@ -899,7 +899,7 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true, return_samples::Bool=false, oe_std)
+function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, min_samples_threshold::Int=6, verbose::Bool=true, return_samples::Bool=false, oe_std)
     """
     Rationale:
     - Draw a large set of samples from the initial OE Gaussian (oe_std), converted to Cartesian.
@@ -935,7 +935,7 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
 
     if verbose
         println("  Propagating via Energy-Stratified KS CKF")
-        println("    num_mc_samples=", num_mc_samples, " num_energy_bins=", num_energy_bins, " drop_edge_bins=", drop_edge_bins)
+        println("    num_mc_samples=", num_mc_samples, " num_energy_bins=", num_energy_bins, " min_samples_threshold=", min_samples_threshold)
     end
 
     # --- Step 1: Monte Carlo samples at t0 (OE space) ---
@@ -960,14 +960,10 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     # thresholds are just the internal edges (for printing/debugging)
     thresholds = Float64.(edges_vec[2:end-1])
 
-    # Optionally drop the leftmost/rightmost energy bins
+    # Start with all bins; symmetric drop only when at least one side has insufficient samples
     active_bins = collect(1:num_energy_bins)
-    if drop_edge_bins && num_energy_bins >= 2
-        active_bins = collect(2:(num_energy_bins-1))
-    end
 
-    # Drop bins with 6 or fewer samples, ensuring symmetric removal from both sides
-    min_samples_threshold = 6
+    # Drop bins with min_samples_threshold or fewer samples, ensuring symmetric removal from both sides to avoid bias
     bins_with_few_samples = [k for k in active_bins if bin_counts[k] <= min_samples_threshold]
 
     if !isempty(bins_with_few_samples)
@@ -1030,9 +1026,15 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
 
         idxs = findall(==(k), bin_id)
         Xk = Matrix{Float64}(X0[:, idxs])
-        μk, Pk = mean_and_cov_from_samples(Xk)
-        μ0_bins[k] = μk
-        P0_bins[k] = Pk
+        # Skip covariance for n_k <= 1: mean_and_cov_from_samples divides by (N-1), causing Inf/NaN
+        if n_k <= 1
+            μ0_bins[k] = vec(Xk)
+            P0_bins[k] = zeros(6, 6)
+        else
+            μk, Pk = mean_and_cov_from_samples(Xk)
+            μ0_bins[k] = μk
+            P0_bins[k] = Pk
+        end
 
         hk = h_vals[idxs]
         h_ranges[k] = (minimum(hk), maximum(hk))
@@ -1044,19 +1046,10 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
             println("    bin ", k, ": n=", bin_counts[k], " h∈[", h_ranges[k][1], ", ", h_ranges[k][2], "]")
         end
         if !isempty(dropped_bins)
-            dropped_edge = Int[]
-            dropped_few_samples = Int[]
-            if drop_edge_bins && num_energy_bins >= 2
-                dropped_edge = [1, num_energy_bins]
-            end
-            min_samples_threshold = 6
             bins_with_few_samples_all = [k for k in 1:num_energy_bins if bin_counts[k] <= min_samples_threshold]
             dropped_few_samples = intersect(dropped_bins, bins_with_few_samples_all)
-            if !isempty(dropped_edge) && any(k -> k in dropped_bins, dropped_edge)
-                println("    dropped edge bins: ", dropped_edge, " counts=", bin_counts[dropped_edge])
-            end
             if !isempty(dropped_few_samples)
-                println("    dropped bins with ≤$(min_samples_threshold) samples: ", dropped_few_samples, " counts=", bin_counts[dropped_few_samples])
+                println("    dropped bins (symmetric, ≤$(min_samples_threshold) samples on at least one side): ", sort(collect(dropped_bins)), " counts=", [bin_counts[k] for k in sort(collect(dropped_bins))])
             end
         end
     end

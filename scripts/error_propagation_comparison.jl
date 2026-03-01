@@ -39,6 +39,7 @@ num_orbits_list = NUM_ORBITS_LIST
 num_samples = NUM_MC_SAMPLES
 num_mc_samples_binning = NUM_MC_SAMPLES_BINNING
 num_energy_bins = NUM_ENERGY_BINS
+min_samples_threshold = MIN_SAMPLES_THRESHOLD
 
 # Number string for filenames (e.g. 1000, 1e-5)
 fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
@@ -234,7 +235,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Supervisor-spec: MC energy binning -> per-bin linearized KS sigma points -> per-step sampling aggregation
             result_mc_binned_ks = run_method_safely("8. ENERGY-STRATIFIED KS CKF",
                 propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points, x_vec_0, P_0, times, sim_params;
-                num_mc_samples=num_mc_samples_binning, num_energy_bins=num_energy_bins, return_samples=true,
+                num_mc_samples=num_mc_samples_binning, num_energy_bins=num_energy_bins, min_samples_threshold=min_samples_threshold, return_samples=true,
                 oe_std=oe_std)
             x_vec_traj_mean_mc_binned_ks = result_mc_binned_ks.x_vec_traj
             P_traj_mc_binned_ks = result_mc_binned_ks.P_traj
@@ -743,6 +744,7 @@ for (idx, result) in enumerate(all_results)
         println("    UT (Cartesian) - RMSE: ", m_ut.pos_rmse, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
     else
         println("    UT (Cartesian) - FAILED")
+    end
     (m_eigen_cart !== nothing) && println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_rmse, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
     (m_eigen_cart === nothing) && println("    CKF (Cartesian): FAILED")
     (m_eigen_ks !== nothing) && println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_rmse, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
