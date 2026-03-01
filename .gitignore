@@ -1,15 +1,9 @@
-# Compare
-compare/data/
-
 # Julia
-julia/Manifest.toml
-julia/test_old/
-julia/data/
-julia/out/
-julia/logs/
-
-# Python
-python/**/__pycache__/
+Manifest.toml
+test_old/
+data/
+out/
+logs/
 
 # Miscellaneous
 .DS_Store

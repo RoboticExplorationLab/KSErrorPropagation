@@ -6,8 +6,8 @@ computes error metrics, prints a summary table to stdout, and generates
 comparison plots in figs/.
 
 Usage:
-    julia julia/scripts/compare_approaches.jl                     # uses config/default.jl
-    julia julia/scripts/compare_approaches.jl config/sanity_check.jl  # uses custom config
+    julia scripts/compare_approaches.jl                     # uses config/default.jl
+    julia scripts/compare_approaches.jl config/sanity_check.jl  # uses custom config
 
 The out/ directory should contain NPZ files produced by
 test/test_error_propagation_comparison.jl with the naming convention:
