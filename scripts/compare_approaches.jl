@@ -11,7 +11,7 @@ Usage:
 
 The out/ directory should contain NPZ files produced by
 scripts/error_propagation_comparison.jl with the naming convention:
-    {approach_id}_{orbit_id}_num_orbits{N}_std_pos{σ}m_std_vel{σv}mps.npz
+    {approach_id}_{orbit_id}_num_orbits{N}_oe_std_a{σ_a}m.npz
 """
 
 using Pkg
@@ -60,8 +60,9 @@ figs_dir = joinpath(@__DIR__, "..", "figs")
 mkpath(figs_dir)
 
 # ── Helper: load approach NPZ → (x_vec_traj, P_traj, times) ────────────────
-function load_approach(dir, approach_id, orbit, num_orbits, σ_pos, σ_vel)
-    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps.npz"
+fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
+function load_approach(dir, approach_id, orbit, num_orbits, oe_std)
+    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.npz"
     filepath = joinpath(dir, filename)
     if !isfile(filepath)
         return nothing
@@ -88,17 +89,15 @@ for orbit in TEST_ORBITS
     r_vec_0 = SD.sOSCtoCART([sma, orbit.e, orbit.i, orbit.RAAN, orbit.omega, orbit.M];
         GM=SIM_PARAMS.GM, use_degrees=false)[1:3]
 
-    for σ_pos in POSITION_UNCERTAINTIES
-        σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
-
+    for oe_std in OE_INITIAL_STD_SCENARIOS
         for num_orbits in NUM_ORBITS_LIST
             println("\n" * "="^80)
             println("SCENARIO: ", orbit.name)
-            println("  σ_pos = ", σ_pos, " m  |  σ_vel = ", round(σ_vel, digits=6), " m/s  |  orbits = ", num_orbits)
+            println("  OE initial std (σ_a) = ", oe_std[1], " m  |  orbits = ", num_orbits)
             println("="^80)
 
             # Load Monte Carlo ground truth
-            mc = load_approach(out_dir, "mc", orbit, num_orbits, σ_pos, σ_vel)
+            mc = load_approach(out_dir, "mc", orbit, num_orbits, oe_std)
             if mc === nothing
                 println("  ✗ Monte Carlo ground truth not found — skipping scenario")
                 continue
@@ -110,7 +109,7 @@ for orbit in TEST_ORBITS
             # Load each approach and compute metrics
             loaded   = []  # (approach_entry, data, metrics)
             for ap in APPROACHES
-                data = load_approach(out_dir, ap.id, orbit, num_orbits, σ_pos, σ_vel)
+                data = load_approach(out_dir, ap.id, orbit, num_orbits, oe_std)
                 if data === nothing
                     println("  ✗ ", ap.name, " — data not found")
                     continue
@@ -195,12 +194,12 @@ for orbit in TEST_ORBITS
             p_combined = plot(p1, p2, p3, p4, p5,
                 layout=(5, 1), size=(1000, 2000), left_margin=50Plots.px)
 
-            figname = joinpath(figs_dir, "compare_approaches_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps.png")
+            figname = joinpath(figs_dir, "compare_approaches_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.png")
             savefig(p_combined, figname)
             println("  Saved figure: ", figname)
 
         end  # num_orbits
-    end  # σ_pos
+    end  # oe_std
 end  # orbit
 
 println("\n" * "="^80)

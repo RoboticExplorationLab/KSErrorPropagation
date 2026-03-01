@@ -13,7 +13,7 @@ The script saves data to data/ at project root with format:
 
 Configuration is loaded from config/default.jl:
     - TEST_ORBITS: list of orbits to propagate
-    - POSITION_UNCERTAINTIES: list of position uncertainties (meters)
+    - OE_INITIAL_STD_SCENARIOS: list of OE initial std [σ_a, σ_e, σ_i, σ_RAAN, σ_ω, σ_M]
     - NUM_ORBITS_LIST: list of number of orbits to propagate
     - NUM_MC_SAMPLES: number of Monte Carlo samples
 """
@@ -49,7 +49,7 @@ Random.seed!(RANDOM_SEED)
 function main()
     # ========== Configuration (from config/default.jl) ==========
     test_orbits = TEST_ORBITS
-    position_uncertainties = POSITION_UNCERTAINTIES
+    oe_initial_std_scenarios = OE_INITIAL_STD_SCENARIOS
     num_orbits_list = NUM_ORBITS_LIST
     num_samples = NUM_MC_SAMPLES
     
@@ -66,9 +66,9 @@ function main()
     println("="^80)
     println("Configuration:")
     println("  Number of orbits: ", num_orbits_list)
-    println("  Position uncertainties: ", position_uncertainties, " m")
+    println("  OE initial std scenarios: ", length(oe_initial_std_scenarios))
     println("  Number of samples: ", num_samples)
-    println("  Number of scenarios: ", length(test_orbits) * length(position_uncertainties) * length(num_orbits_list))
+    println("  Number of scenarios: ", length(test_orbits) * length(oe_initial_std_scenarios) * length(num_orbits_list))
     
     # Loop over all orbit/uncertainty/orbit combinations
     for (orbit_idx, orbit) in enumerate(test_orbits)
@@ -94,6 +94,7 @@ function main()
         # Convert orbital elements to Cartesian state
         oe_vec = [sma, e, i, Ω, ω, M]
         x_vec_0 = SD.sOSCtoCART(oe_vec; GM=SIM_PARAMS.GM, use_degrees=false)
+        oe_vec_0 = SD.sCARTtoOSC(x_vec_0; GM=SIM_PARAMS.GM, use_degrees=false)
         r_vec_0 = x_vec_0[1:3]
         v_vec_0 = x_vec_0[4:6]
         
@@ -103,17 +104,14 @@ function main()
         println("  Radius: ", norm(r_vec_0) / 1e3, " km")
         println("  Speed: ", norm(v_vec_0) / 1e3, " km/s")
         
-        # Loop over position uncertainty scenarios
-        for σ_pos in position_uncertainties
-            σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
-            
+        # Loop over OE initial std scenarios
+        for (scenario_idx, oe_std) in enumerate(oe_initial_std_scenarios)
             println("\n" * "-"^80)
-            println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
+            println("OE INITIAL STD SCENARIO ", scenario_idx, ": σ_a = ", oe_std[1], " m")
             println("-"^80)
-            println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
-            println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
+            println("  OE initial std: ", oe_std)
             
-            P_0 = build_initial_covariance(σ_pos, σ_vel)
+            P_0 = zeros(6, 6)  # MC uses oe_std for sampling
             
             # Loop over number of orbits
             for num_orbits in num_orbits_list
@@ -153,7 +151,7 @@ function main()
                 println("RUNNING MONTE CARLO PROPAGATION")
                 println("="^80)
                 x_vec_traj, P_traj, samples_propagated = propagate_uncertainty_via_monte_carlo(
-                    x_vec_0, P_0, times, sim_params, num_samples; return_samples=true
+                    x_vec_0, P_0, times, sim_params, num_samples; return_samples=true, oe_std=oe_std
                 )
                 println("  Completed: ", length(x_vec_traj), " states")
                 
@@ -193,7 +191,7 @@ function main()
                 
                 # Create output filename (matching scripts/error_propagation_comparison.jl pattern)
                 fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
-                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
+                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).npz"
                 output_path = joinpath(data_dir, output_filename)
                 
                 println("\n" * "="^80)
@@ -237,7 +235,7 @@ function main()
                 println("SCENARIO COMPLETE")
                 println("="^80)
             end  # end num_orbits loop
-        end  # end position uncertainty loop
+        end  # end OE initial std scenario loop
     end  # end orbit loop
     
     println("\n" * "="^80)

@@ -23,11 +23,13 @@ Random.seed!(RANDOM_SEED)
 
 # Local aliases (config uses UPPER_CASE constants)
 test_orbits = TEST_ORBITS
-position_uncertainties = POSITION_UNCERTAINTIES
+oe_initial_std_scenarios = OE_INITIAL_STD_SCENARIOS
 num_orbits_list = NUM_ORBITS_LIST
 num_energy_bins_list = NUM_ENERGY_BINS_LIST
 num_mc_samples_ground_truth = NUM_MC_SAMPLES
 num_mc_samples_binning = NUM_MC_SAMPLES_BINNING
+
+fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
 
 println("="^80)
 println("ENERGY-STRATIFIED KS CKF: BINS SWEEP TEST")
@@ -36,11 +38,11 @@ println("Comparing Energy-Stratified KS CKF method against Monte Carlo")
 println("while varying the number of energy bins")
 println("\nTest configuration:")
 println("  Number of orbits: ", num_orbits_list)
-println("  Position uncertainties: ", position_uncertainties, " m")
+println("  OE initial std scenarios: ", length(oe_initial_std_scenarios))
 println("  Number of energy bins to test: ", num_energy_bins_list)
 println("  MC samples (ground truth, loaded from file): ", num_mc_samples_ground_truth)
 println("  MC samples (binning method): ", num_mc_samples_binning)
-println("  Number of test scenarios: ", length(test_orbits) * length(position_uncertainties) * length(num_orbits_list))
+println("  Number of test scenarios: ", length(test_orbits) * length(oe_initial_std_scenarios) * length(num_orbits_list))
 
 # Store results for all scenarios
 all_results = []
@@ -68,6 +70,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
     # Convert orbital elements to Cartesian state
     oe_vec = [sma, e, i, Ω, ω, M]
     x_vec_0 = SD.sOSCtoCART(oe_vec; GM=SIM_PARAMS.GM, use_degrees=false)
+    oe_vec_0 = SD.sCARTtoOSC(x_vec_0; GM=SIM_PARAMS.GM, use_degrees=false)
     r_vec_0 = x_vec_0[1:3]
     v_vec_0 = x_vec_0[4:6]
 
@@ -77,17 +80,14 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
     println("  Radius: ", norm(r_vec_0) / 1e3, " km")
     println("  Speed: ", norm(v_vec_0) / 1e3, " km/s")
 
-    # Loop over position uncertainty scenarios
-    for σ_pos in position_uncertainties
-        σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
-
+    # Loop over OE initial std scenarios
+    for (scenario_idx, oe_std) in enumerate(oe_initial_std_scenarios)
         println("\n" * "-"^80)
-        println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
+        println("OE INITIAL STD SCENARIO ", scenario_idx, ": σ_a = ", oe_std[1], " m")
         println("-"^80)
-        println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
-        println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
+        println("  OE initial std: ", oe_std)
 
-        P_0 = build_initial_covariance(σ_pos, σ_vel)
+        P_0 = compute_P0_from_oe_samples(oe_vec_0, oe_std, SIM_PARAMS.GM, SIM_PARAMS.R_EARTH)
 
         # Loop over number of orbits
         for num_orbits in num_orbits_list
@@ -146,7 +146,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             
             # Construct filename matching save_monte_carlo_npz.jl pattern
             data_dir = joinpath(@__DIR__, "..", "data")
-            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_mc_samples_ground_truth)).npz"
+            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_mc_samples_ground_truth)).npz"
             mc_filepath = joinpath(data_dir, mc_filename)
             
             if !isfile(mc_filepath)
@@ -185,7 +185,8 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                     num_mc_samples=num_mc_samples_binning,
                     num_energy_bins=num_bins,
                     drop_edge_bins=true,
-                    verbose=true)
+                    verbose=true,
+                    oe_std=oe_std)
                 results_by_bins[num_bins] = result
             end
 
@@ -360,7 +361,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             plot!(p6, num_energy_bins_list, vel_rmse_vals .* 1e3, label="Velocity RMSE (mm/s)", marker=:square, linewidth=2, color=:red)
 
             # Generate filename based on scenario
-            filename = "figs/energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(Int(σ_pos))m_num_bins$(join(num_energy_bins_list, "-")).png"
+            filename = "figs/energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_bins$(join(num_energy_bins_list, "-")).png"
 
             # Combine plots
             p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1400, 2400), left_margin=50Plots.px)
@@ -370,7 +371,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Store results
             push!(all_results, (
                 orbit=orbit.name,
-                σ_pos=σ_pos,
+                oe_std=oe_std,
                 σ_vel=σ_vel,
                 num_orbits=num_orbits,
                 num_energy_bins_list=num_energy_bins_list,
@@ -382,7 +383,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             println("SCENARIO COMPLETE")
             println("="^80)
         end  # end num_orbits loop
-    end  # end position uncertainty loop
+    end  # end OE initial std scenario loop
 end  # end orbit loop
 
 println("\n" * "="^80)
@@ -392,7 +393,7 @@ println("\nSummary of all scenarios:")
 for (idx, result) in enumerate(all_results)
     println("\nScenario $idx:")
     println("  Orbit: ", result.orbit)
-    println("  Position uncertainty: ", result.σ_pos, " m")
+    println("  OE initial std (σ_a): ", result.oe_std[1], " m")
     println("  Velocity uncertainty: ", result.σ_vel, " m/s")
     println("  Number of orbits: ", result.num_orbits)
     println("  Number of energy bins tested: ", result.num_energy_bins_list)

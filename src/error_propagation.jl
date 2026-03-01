@@ -2,18 +2,66 @@ using Random
 using LinearAlgebra
 using ForwardDiff
 using DifferentialEquations
+using SatelliteDynamics
 
-function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000; return_samples=false)
-    # Sample initial states from multivariate Gaussian
-    # Use Cholesky decomposition: if x ~ N(0, I), then L_chol*x + μ ~ N(μ, P) where P = L_chol*L_chol'
-    L_chol = cholesky(P_0).L
+const _SD = SatelliteDynamics
 
-    # Generate samples
-    samples_0 = Vector{Vector{Float64}}(undef, num_samples)
-    for i in 1:num_samples
-        z = randn(6)  # Standard normal
-        samples_0[i] = x_vec_0 .+ L_chol * z
+function compute_P0_from_oe_samples(oe_vec_0, σ_oe, GM, R_Earth; n_samples=10000)
+    samples = sample_initial_states_orbital_elements(oe_vec_0, σ_oe, n_samples, GM, R_Earth)
+    μ = sum(samples) / length(samples)
+    P = sum((s .- μ) * (s .- μ)' for s in samples) / (n_samples - 1)
+    return (P + P') / 2.0
+end
+
+function sample_initial_states_orbital_elements(oe_vec_0, σ_oe, num_samples, GM, R_Earth)
+    P_oe = diagm(σ_oe .^ 2)
+    L_chol = cholesky(P_oe).L
+
+    samples_cart = Vector{Vector{Float64}}(undef, num_samples)
+    generated = 0
+    rejected = 0
+    max_attempts = num_samples * 100
+
+    while generated < num_samples && (generated + rejected) < max_attempts
+        z = randn(6)
+        oe_sample = oe_vec_0 .+ L_chol * z
+
+        a_s, e_s = oe_sample[1], oe_sample[2]
+
+        oe_sample[4] = mod(oe_sample[4], 2π)
+        oe_sample[5] = mod(oe_sample[5], 2π)
+        oe_sample[6] = mod(oe_sample[6], 2π)
+        oe_sample[3] = clamp(oe_sample[3], 0.0, π)
+
+        if e_s < 0.0 || e_s >= 1.0; rejected += 1; continue; end
+        if a_s * (1.0 - e_s) < R_Earth; rejected += 1; continue; end
+        if a_s <= 0.0; rejected += 1; continue; end
+
+        generated += 1
+        samples_cart[generated] = _SD.sOSCtoCART(oe_sample; GM=GM, use_degrees=false)
     end
+
+    if generated < num_samples
+        error("OE sampling: only generated $generated / $num_samples valid samples after $max_attempts attempts ($rejected rejected). Consider reducing σ_oe.")
+    end
+
+    if rejected > 0
+        println("  OE sampling: rejected ", rejected, " / ", generated + rejected, " samples (",
+            round(100.0 * rejected / (generated + rejected), digits=1), "%)")
+    end
+
+    return samples_cart
+end
+
+function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples=10000;
+        return_samples=false, oe_std)
+
+    oe_vec_0 = _SD.sCARTtoOSC(x_vec_0; GM=sim_params.GM, use_degrees=false)
+    σ_oe = collect(Float64, oe_std)
+    println("  Sampling in orbital element space:")
+    println("    Nominal OE: ", oe_vec_0)
+    println("    σ_oe: ", σ_oe)
+    samples_0 = sample_initial_states_orbital_elements(oe_vec_0, σ_oe, num_samples, sim_params.GM, sim_params.R_EARTH)
 
     # Pre-allocate trajectory storage
     samples_propagated = Vector{Vector{Vector{Float64}}}(undef, length(times))
@@ -851,10 +899,10 @@ function propagate_uncertainty_via_linearized_ks_dynamics(x_vec_0, P_0, times, s
     return x_vec_traj, P_traj
 end
 
-function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true, return_samples::Bool=false)
+function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0, P_0, times, sim_params; num_mc_samples::Int=20000, num_energy_bins::Int=10, drop_edge_bins::Bool=true, verbose::Bool=true, return_samples::Bool=false, oe_std)
     """
     Rationale:
-    - Draw a large set of samples from the initial Cartesian Gaussian (μ₀, P₀).
+    - Draw a large set of samples from the initial OE Gaussian (oe_std), converted to Cartesian.
     - Convert samples to KS coordinates and compute KS energy `h` per sample.
     - Partition samples into uniformly sized energy bins (uniform bin width in `h`); record sample count per bin.
     - For each bin, compute a Cartesian Gaussian approximation (μ₀,k, P₀,k).
@@ -890,8 +938,10 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
         println("    num_mc_samples=", num_mc_samples, " num_energy_bins=", num_energy_bins, " drop_edge_bins=", drop_edge_bins)
     end
 
-    # --- Step 1: Monte Carlo samples at t0 ---
-    X0 = sample_gaussian(Vector{Float64}(x_vec_0), Matrix{Float64}(P_0), num_mc_samples) # 6 x N
+    # --- Step 1: Monte Carlo samples at t0 (OE space) ---
+    oe_vec_0 = _SD.sCARTtoOSC(x_vec_0; GM=sim_params.GM, use_degrees=false)
+    samples_cart = sample_initial_states_orbital_elements(oe_vec_0, oe_std, num_mc_samples, sim_params.GM, sim_params.R_EARTH)
+    X0 = hcat(samples_cart...)  # 6 x N
 
     # --- Step 2-4: compute energies, sort, bin, and compute per-bin μ₀,k, P₀,k ---
     h_vals = Vector{Float64}(undef, num_mc_samples)

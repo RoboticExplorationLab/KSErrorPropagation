@@ -10,7 +10,7 @@
 # After including, the following variables are defined in the caller's scope:
 #   SIM_PARAMS              — named tuple of physical/integrator parameters
 #   TEST_ORBITS             — vector of orbit named tuples (name, a, e, i, ...)
-#   POSITION_UNCERTAINTIES  — vector of position uncertainties in meters
+#   OE_INITIAL_STD_SCENARIOS — vector of 6-element OE initial std [σ_a, σ_e, σ_i, σ_RAAN, σ_ω, σ_M]
 #   NUM_ORBITS_LIST         — vector of number of orbital periods to propagate
 #   NUM_MC_SAMPLES          — number of MC samples (ground truth / saving)
 #   NUM_MC_SAMPLES_BINNING  — number of MC samples for energy-stratified method
@@ -20,9 +20,8 @@
 #   KS_RELATIVE_STATE_NORM_THRESHOLD — threshold on norm(ks_state_rel[1:4]) to choose
 #       separate vs together callback in KS relative dynamics (default 1e-7)
 #
-# Helper functions:
-#   compute_velocity_uncertainty(σ_pos, sma, r_vec_0, GM) → σ_vel
-#   build_initial_covariance(σ_pos, σ_vel) → 6×6 diagonal P_0
+# Helper (in error_propagation.jl):
+#   compute_P0_from_oe_samples(oe_vec_0, σ_oe, GM, R_Earth; n_samples=10000) → 6×6 Cartesian P_0
 # ============================================================================
 
 # ---- Simulation parameters -------------------------------------------------
@@ -86,37 +85,6 @@ TEST_ORBITS = [
         id = "mol"),
 ]
 
-# ---- Helper functions -------------------------------------------------------
-
-"""
-    compute_velocity_uncertainty(σ_pos, sma, r_vec_0, GM)
-
-Compute 1-sigma velocity uncertainty from position uncertainty via the
-vis-viva equation uncertainty propagation law.
-"""
-function compute_velocity_uncertainty(σ_pos, sma, r_vec_0, GM)
-    # Compute velocity uncertainty from sqrt(GM/(sma + sigma_position))
-    # n = sqrt(SIM_PARAMS.GM / sma^3)  # Circular orbit velocity
-    # σ_vel = n * σ_pos
-
-    # Compute velocity uncertainty from the Uncertainty Propagation Law
-    # norm(v) = sqrt(GM * (2/norm(r) - 1/a)) = f(norm(v), a)
-    # σ_norm(v) = sqrt( (∂f/∂norm(r))² * σ_norm(r)² + (∂f/∂a)² * σ_a² ), but σ_a = 0
-    # ∂f/∂norm(r) = -GM / (sqrt(GM * (2/norm(r) - 1/a)) * norm(r)²)
-    σ_vel = sqrt((-GM / (sqrt(GM * (2 / norm(r_vec_0) - 1 / sma)) * norm(r_vec_0)^2))^2 * σ_pos^2)
-    return σ_vel
-end
-
-"""
-    build_initial_covariance(σ_pos, σ_vel)
-
-Build a 6×6 diagonal initial covariance matrix from isotropic position
-and velocity uncertainties.
-"""
-function build_initial_covariance(σ_pos, σ_vel)
-    return diagm([σ_pos^2, σ_pos^2, σ_pos^2, σ_vel^2, σ_vel^2, σ_vel^2])
-end
-
 # ---- Scenario / run parameters ---------------------------------------------
 
 # Reproducibility
@@ -125,8 +93,12 @@ RANDOM_SEED = 1234
 # KS relative dynamics: threshold to choose separate vs together integration callback
 KS_RELATIVE_STATE_NORM_THRESHOLD = 1e-7
 
-# Position uncertainty scenarios (meters)
-POSITION_UNCERTAINTIES = [1e3, 1e4, 1e5]  # 1 km, 10 km, 100 km
+# OE initial std scenarios: [σ_a (m), σ_e, σ_i, σ_RAAN, σ_ω, σ_M] (rad for angles)
+OE_INITIAL_STD_SCENARIOS = [
+    [1e3, 0.001, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+    [1e4, 0.001, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+    [1e5, 0.001, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+]
 
 # Number of orbital periods to propagate
 NUM_ORBITS_LIST = [3.0]

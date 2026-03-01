@@ -34,7 +34,7 @@ Random.seed!(RANDOM_SEED)
 
 # Local aliases (config uses UPPER_CASE constants)
 test_orbits = TEST_ORBITS
-position_uncertainties = POSITION_UNCERTAINTIES
+oe_initial_std_scenarios = OE_INITIAL_STD_SCENARIOS
 num_orbits_list = NUM_ORBITS_LIST
 num_samples = NUM_MC_SAMPLES
 num_mc_samples_binning = NUM_MC_SAMPLES_BINNING
@@ -49,8 +49,8 @@ println("="^80)
 println("Comparing error propagation methods against Monte Carlo ground truth")
 println("\nTest configuration:")
 println("  Number of orbits: ", num_orbits_list)
-println("  Position uncertainties: ", position_uncertainties, " m")
-println("  Number of test scenarios: ", length(test_orbits) * length(position_uncertainties) * length(num_orbits_list))
+println("  OE initial std scenarios: ", length(oe_initial_std_scenarios))
+println("  Number of test scenarios: ", length(test_orbits) * length(oe_initial_std_scenarios) * length(num_orbits_list))
 println("  Save results to out/: ", save_to_out)
 
 # Store results for all scenarios
@@ -79,6 +79,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
     # Convert orbital elements to Cartesian state
     oe_vec = [sma, e, i, Ω, ω, M]
     x_vec_0 = SD.sOSCtoCART(oe_vec; GM=SIM_PARAMS.GM, use_degrees=false)
+    oe_vec_0 = SD.sCARTtoOSC(x_vec_0; GM=SIM_PARAMS.GM, use_degrees=false)
     r_vec_0 = x_vec_0[1:3]
     v_vec_0 = x_vec_0[4:6]
 
@@ -88,17 +89,15 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
     println("  Radius: ", norm(r_vec_0) / 1e3, " km")
     println("  Speed: ", norm(v_vec_0) / 1e3, " km/s")
 
-    # Loop over position uncertainty scenarios
-    for σ_pos in position_uncertainties
-        σ_vel = compute_velocity_uncertainty(σ_pos, sma, r_vec_0, SIM_PARAMS.GM)
-
+    # Loop over OE initial std scenarios
+    for (scenario_idx, oe_std) in enumerate(oe_initial_std_scenarios)
         println("\n" * "-"^80)
-        println("POSITION UNCERTAINTY SCENARIO: σ_pos = ", σ_pos, " m")
+        println("OE INITIAL STD SCENARIO ", scenario_idx, ": σ_a = ", oe_std[1], " m")
         println("-"^80)
-        println("  Position uncertainty: ", σ_pos, " m (1-sigma)")
-        println("  Velocity uncertainty: ", σ_vel, " m/s (1-sigma)")
+        println("  OE initial std: ", oe_std)
 
-        P_0 = build_initial_covariance(σ_pos, σ_vel)
+        # Compute P_0 once from OE Monte Carlo samples; all methods use it
+        P_0 = compute_P0_from_oe_samples(oe_vec_0, oe_std, SIM_PARAMS.GM, SIM_PARAMS.R_EARTH)
 
         # Loop over number of orbits
         for num_orbits in num_orbits_list
@@ -162,7 +161,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Monte Carlo (ground truth) - load from npz file if present, else run on the fly
             println("\n" * "="^80)
             data_dir = joinpath(@__DIR__, "..", "data")
-            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).npz"
+            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).npz"
             mc_filepath = joinpath(data_dir, mc_filename)
             if isfile(mc_filepath)
                 println("1. MONTE CARLO (Ground Truth) - Loading from file")
@@ -184,7 +183,8 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 println("1. MONTE CARLO (Ground Truth) - Running on the fly (file not found)")
                 println("="^80)
                 println("  File not found: ", mc_filepath)
-                x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples)
+                x_vec_traj_mean_mc, P_traj_mc = propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, num_samples;
+                    oe_std=oe_std)
                 println("  Completed: ", length(x_vec_traj_mean_mc), " states")
             end
 
@@ -234,7 +234,8 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Supervisor-spec: MC energy binning -> per-bin linearized KS sigma points -> per-step sampling aggregation
             result_mc_binned_ks = run_method_safely("8. ENERGY-STRATIFIED KS CKF",
                 propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points, x_vec_0, P_0, times, sim_params;
-                num_mc_samples=num_mc_samples_binning, num_energy_bins=num_energy_bins, return_samples=true)
+                num_mc_samples=num_mc_samples_binning, num_energy_bins=num_energy_bins, return_samples=true,
+                oe_std=oe_std)
             x_vec_traj_mean_mc_binned_ks = result_mc_binned_ks.x_vec_traj
             P_traj_mc_binned_ks = result_mc_binned_ks.P_traj
 
@@ -243,7 +244,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 out_dir = joinpath(@__DIR__, "..", "out")
                 mkpath(out_dir)
 
-                function save_approach_npz(out_dir, approach_id, orbit, num_orbits, σ_pos, σ_vel, times_save, x_vec_traj, P_traj; sigma_points_traj=nothing)
+                function save_approach_npz(out_dir, approach_id, orbit, num_orbits, oe_std, times_save, x_vec_traj, P_traj; sigma_points_traj=nothing)
                     N_save = length(x_vec_traj)
                     x_array = zeros(N_save, 6)
                     P_array = zeros(N_save, 6, 6)
@@ -252,7 +253,6 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                         P_array[i, :, :] = P_traj[i]
                     end
                     npz_dict = Dict{String,Any}("x" => x_array, "P" => P_array, "timestamp" => collect(times_save[1:N_save]))
-                    # Save sigma points / samples as s1, s2, ..., sK (each N_save × 6)
                     if sigma_points_traj !== nothing && length(sigma_points_traj) >= N_save
                         num_points = length(sigma_points_traj[1])
                         for j in 1:num_points
@@ -264,7 +264,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                         end
                         println("  Including ", num_points, " sigma points/samples per timestep")
                     end
-                    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps.npz"
+                    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.npz"
                     filepath = joinpath(out_dir, filename)
                     NPZ.npzwrite(filepath, npz_dict)
                     println("  Saved: ", filepath)
@@ -273,32 +273,28 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 println("\n" * "="^80)
                 println("SAVING APPROACH RESULTS TO out/")
                 println("="^80)
-                save_approach_npz(out_dir, "mc", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_mc, P_traj_mc)
+                save_approach_npz(out_dir, "mc", orbit, num_orbits, oe_std, times, x_vec_traj_mean_mc, P_traj_mc)
                 if !result_lin_cart.failed
-                    save_approach_npz(out_dir, "lincov_cart", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_lin_cart, P_traj_lin_cart)
+                    save_approach_npz(out_dir, "lincov_cart", orbit, num_orbits, oe_std, times, x_vec_traj_mean_lin_cart, P_traj_lin_cart)
                 end
                 if !result_ut_cart.failed
-                    save_approach_npz(out_dir, "ut_cart", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_ut_cart, P_traj_ut_cart;
+                    save_approach_npz(out_dir, "ut_cart", orbit, num_orbits, oe_std, times, x_vec_traj_mean_ut_cart, P_traj_ut_cart;
                         sigma_points_traj=result_ut_cart.sigma_points_traj)
                 end
                 if !result_eigen_cart.failed
-                    save_approach_npz(out_dir, "ckf_cart", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_eigen_cart, P_traj_eigen_cart;
+                    save_approach_npz(out_dir, "ckf_cart", orbit, num_orbits, oe_std, times, x_vec_traj_mean_eigen_cart, P_traj_eigen_cart;
                         sigma_points_traj=result_eigen_cart.sigma_points_traj)
                 end
                 if !result_eigen_ks.failed
-                    save_approach_npz(out_dir, "ckf_ks", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_eigen_ks, P_traj_eigen_ks;
+                    save_approach_npz(out_dir, "ckf_ks", orbit, num_orbits, oe_std, times, x_vec_traj_mean_eigen_ks, P_traj_eigen_ks;
                         sigma_points_traj=result_eigen_ks.sigma_points_traj)
                 end
                 if !result_lin_ks_sigma.failed
-                    save_approach_npz(out_dir, "ckf_ks_rel", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_lin_ks_sigma, P_traj_lin_ks_sigma;
+                    save_approach_npz(out_dir, "ckf_ks_rel", orbit, num_orbits, oe_std, times, x_vec_traj_mean_lin_ks_sigma, P_traj_lin_ks_sigma;
                         sigma_points_traj=result_lin_ks_sigma.sigma_points_traj)
                 end
-                # LinCov (KS) commented out - approach needs fixing
-                # if !result_lin_ks_dyn.failed
-                #     save_approach_npz(out_dir, "lincov_ks", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_lin_ks_dyn, P_traj_lin_ks_dyn)
-                # end
                 if !result_mc_binned_ks.failed
-                    save_approach_npz(out_dir, "stratified_ks", orbit, num_orbits, σ_pos, σ_vel, times, x_vec_traj_mean_mc_binned_ks, P_traj_mc_binned_ks;
+                    save_approach_npz(out_dir, "stratified_ks", orbit, num_orbits, oe_std, times, x_vec_traj_mean_mc_binned_ks, P_traj_mc_binned_ks;
                         sigma_points_traj=result_mc_binned_ks.sigma_points_traj)
                 end
             end
@@ -345,10 +341,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print position errors
             println("\nPosition errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  Cartesian LinCov:")
+                println("  LinCov (Cartesian):")
                 println("    RMSE = ", metrics_lin_cart.pos_rmse, " m, Min = ", metrics_lin_cart.pos_min, " m, Max = ", metrics_lin_cart.pos_max, " m")
             else
-                println("  Cartesian LinCov: FAILED")
+                println("  LinCov (Cartesian): FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -390,10 +386,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print velocity errors
             println("\nVelocity errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  Cartesian LinCov:")
+                println("  LinCov (Cartesian):")
                 println("    RMSE = ", metrics_lin_cart.vel_rmse, " m/s, Min = ", metrics_lin_cart.vel_min, " m/s, Max = ", metrics_lin_cart.vel_max, " m/s")
             else
-                println("  Cartesian LinCov: FAILED")
+                println("  LinCov (Cartesian): FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -435,10 +431,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Print position and velocity uncertainty errors
             println("\nPosition uncertainty errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  Cartesian LinCov:")
+                println("  LinCov (Cartesian):")
                 println("    RMSE = ", metrics_lin_cart.pos_uncertainty_rmse, " m, Min = ", metrics_lin_cart.pos_uncertainty_min, " m, Max = ", metrics_lin_cart.pos_uncertainty_max, " m")
             else
-                println("  Cartesian LinCov: FAILED")
+                println("  LinCov (Cartesian): FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -479,10 +475,10 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
 
             println("\nVelocity uncertainty errors (vs Monte Carlo):")
             if metrics_lin_cart !== nothing
-                println("  Cartesian LinCov:")
+                println("  LinCov (Cartesian):")
                 println("    RMSE = ", metrics_lin_cart.vel_uncertainty_rmse, " m/s, Min = ", metrics_lin_cart.vel_uncertainty_min, " m/s, Max = ", metrics_lin_cart.vel_uncertainty_max, " m/s")
             else
-                println("  Cartesian LinCov: FAILED")
+                println("  LinCov (Cartesian): FAILED")
             end
             if metrics_ut_cart !== nothing
                 println("  UT (Cartesian):")
@@ -538,7 +534,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 1: Position error
             p1 = plot(xlabel="Time (hours)", ylabel="Position Error (m)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="Cartesian LinCov",
+                plot!(p1, times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -569,7 +565,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 2: Velocity error
             p2 = plot(xlabel="Time (hours)", ylabel="Velocity Error (m/s)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="Cartesian LinCov",
+                plot!(p2, times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -600,7 +596,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 3: Position uncertainty error
             p3 = plot(xlabel="Time (hours)", ylabel="Position Uncertainty Error (m)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="Cartesian LinCov",
+                plot!(p3, times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -631,7 +627,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 4: Velocity uncertainty error
             p4 = plot(xlabel="Time (hours)", ylabel="Velocity Uncertainty Error (m/s)", yscale=:log10, legend=:topleft)
             if metrics_lin_cart !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="Cartesian LinCov",
+                plot!(p4, times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if metrics_ut_cart !== nothing
@@ -662,7 +658,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Plot 5: KL divergence (Gaussian approx) vs Monte Carlo
             p5 = plot(xlabel="Time (hours)", ylabel="KL Divergence", yscale=:log10, legend=:topleft)
             if kl_lin_cart !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_lin_cart, label="Cartesian LinCov",
+                plot!(p5, times[1:N] ./ 3600, kl_lin_cart, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if kl_ut_cart !== nothing
@@ -693,7 +689,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Generate filename based on scenario
             figdir = joinpath(@__DIR__, "..", "figs")
             mkpath(figdir)
-            filename = joinpath(figdir, "error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_std_pos$(fname_num(σ_pos))m_std_vel$(round(σ_vel, digits=6))mps_num_samples$(Int(num_samples)).png")
+            filename = joinpath(figdir, "error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).png")
 
             # Combine plots with increased left margin for y-axis labels
             # Use wider size and set margins explicitly to ensure y-labels are visible
@@ -704,8 +700,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Store results
             push!(all_results, (
                 orbit=orbit.name,
-                σ_pos=σ_pos,
-                σ_vel=σ_vel,
+                oe_std=oe_std,
                 num_orbits=num_orbits,
                 metrics_lin_cart=metrics_lin_cart,
                 metrics_ut_cart=metrics_ut_cart,
@@ -720,7 +715,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             println("SCENARIO COMPLETE")
             println("="^80)
         end  # end num_orbits loop
-    end  # end position uncertainty loop
+    end  # end oe_std scenario loop
 end  # end orbit loop
 
 println("\n" * "="^80)
@@ -737,48 +732,50 @@ for (idx, result) in enumerate(all_results)
     m_mc_binned_ks = result.metrics_mc_binned_ks
     println("\nScenario $idx:")
     println("  Orbit: ", result.orbit)
-    println("  Position uncertainty: ", result.σ_pos, " m")
-    println("  Velocity uncertainty: ", result.σ_vel, " m/s")
-    println("  Number of orbits: ", result.num_orbits)
+    println("  OE initial std (σ_a) = ", result.oe_std[1], " m  |  orbits = ", result.num_orbits)
     println("  Position errors:")
-    println("    Cartesian LinCov - RMSE: ", m_lin.pos_rmse, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
-    println("    UT (Cartesian) - RMSE: ", m_ut.pos_rmse, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
-    println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_rmse, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
-    println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_rmse, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
-    println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.pos_rmse, " m, Min: ", m_lin_ks_sigma.pos_min, " m, Max: ", m_lin_ks_sigma.pos_max, " m")
-    if m_lin_ks_dyn !== nothing
-        println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.pos_rmse, " m, Min: ", m_lin_ks_dyn.pos_min, " m, Max: ", m_lin_ks_dyn.pos_max, " m")
+    if m_lin !== nothing
+        println("    LinCov (Cartesian) - RMSE: ", m_lin.pos_rmse, " m, Min: ", m_lin.pos_min, " m, Max: ", m_lin.pos_max, " m")
+    else
+        println("    LinCov (Cartesian) - FAILED")
     end
-    println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_rmse, " m, Min: ", m_mc_binned_ks.pos_min, " m, Max: ", m_mc_binned_ks.pos_max, " m")
+    if m_ut !== nothing
+        println("    UT (Cartesian) - RMSE: ", m_ut.pos_rmse, " m, Min: ", m_ut.pos_min, " m, Max: ", m_ut.pos_max, " m")
+    else
+        println("    UT (Cartesian) - FAILED")
+    (m_eigen_cart !== nothing) && println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_rmse, " m, Min: ", m_eigen_cart.pos_min, " m, Max: ", m_eigen_cart.pos_max, " m")
+    (m_eigen_cart === nothing) && println("    CKF (Cartesian): FAILED")
+    (m_eigen_ks !== nothing) && println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_rmse, " m, Min: ", m_eigen_ks.pos_min, " m, Max: ", m_eigen_ks.pos_max, " m")
+    (m_eigen_ks === nothing) && println("    CKF (KS): FAILED")
+    (m_lin_ks_sigma !== nothing) && println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.pos_rmse, " m, Min: ", m_lin_ks_sigma.pos_min, " m, Max: ", m_lin_ks_sigma.pos_max, " m")
+    (m_lin_ks_sigma === nothing) && println("    CKF (KS Relative): FAILED")
+    (m_lin_ks_dyn !== nothing) && println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.pos_rmse, " m, Min: ", m_lin_ks_dyn.pos_min, " m, Max: ", m_lin_ks_dyn.pos_max, " m")
+    (m_lin_ks_dyn === nothing) && println("    LinCov (KS): FAILED")
+    (m_mc_binned_ks !== nothing) && println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_rmse, " m, Min: ", m_mc_binned_ks.pos_min, " m, Max: ", m_mc_binned_ks.pos_max, " m")
+    (m_mc_binned_ks === nothing) && println("    Stratified KS CKF: FAILED")
     println("  Velocity errors:")
-    println("    Cartesian LinCov - RMSE: ", m_lin.vel_rmse, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
-    println("    UT (Cartesian) - RMSE: ", m_ut.vel_rmse, " m/s, Min: ", m_ut.vel_min, " m/s, Max: ", m_ut.vel_max, " m/s")
-    println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_rmse, " m/s, Min: ", m_eigen_cart.vel_min, " m/s, Max: ", m_eigen_cart.vel_max, " m/s")
-    println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_rmse, " m/s, Min: ", m_eigen_ks.vel_min, " m/s, Max: ", m_eigen_ks.vel_max, " m/s")
-    println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.vel_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_min, " m/s, Max: ", m_lin_ks_sigma.vel_max, " m/s")
-    if m_lin_ks_dyn !== nothing
-        println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.vel_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_min, " m/s, Max: ", m_lin_ks_dyn.vel_max, " m/s")
-    end
-    println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.vel_rmse, " m/s, Min: ", m_mc_binned_ks.vel_min, " m/s, Max: ", m_mc_binned_ks.vel_max, " m/s")
+    (m_lin !== nothing) && println("    LinCov (Cartesian) - RMSE: ", m_lin.vel_rmse, " m/s, Min: ", m_lin.vel_min, " m/s, Max: ", m_lin.vel_max, " m/s")
+    (m_ut !== nothing) && println("    UT (Cartesian) - RMSE: ", m_ut.vel_rmse, " m/s, Min: ", m_ut.vel_min, " m/s, Max: ", m_ut.vel_max, " m/s")
+    (m_eigen_cart !== nothing) && println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_rmse, " m/s, Min: ", m_eigen_cart.vel_min, " m/s, Max: ", m_eigen_cart.vel_max, " m/s")
+    (m_eigen_ks !== nothing) && println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_rmse, " m/s, Min: ", m_eigen_ks.vel_min, " m/s, Max: ", m_eigen_ks.vel_max, " m/s")
+    (m_lin_ks_sigma !== nothing) && println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.vel_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_min, " m/s, Max: ", m_lin_ks_sigma.vel_max, " m/s")
+    (m_lin_ks_dyn !== nothing) && println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.vel_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_min, " m/s, Max: ", m_lin_ks_dyn.vel_max, " m/s")
+    (m_mc_binned_ks !== nothing) && println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.vel_rmse, " m/s, Min: ", m_mc_binned_ks.vel_min, " m/s, Max: ", m_mc_binned_ks.vel_max, " m/s")
     println("  Position uncertainty errors:")
-    println("    Cartesian LinCov - RMSE: ", m_lin.pos_uncertainty_rmse, " m, Min: ", m_lin.pos_uncertainty_min, " m, Max: ", m_lin.pos_uncertainty_max, " m")
-    println("    UT (Cartesian) - RMSE: ", m_ut.pos_uncertainty_rmse, " m, Min: ", m_ut.pos_uncertainty_min, " m, Max: ", m_ut.pos_uncertainty_max, " m")
-    println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_uncertainty_rmse, " m, Min: ", m_eigen_cart.pos_uncertainty_min, " m, Max: ", m_eigen_cart.pos_uncertainty_max, " m")
-    println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_uncertainty_rmse, " m, Min: ", m_eigen_ks.pos_uncertainty_min, " m, Max: ", m_eigen_ks.pos_uncertainty_max, " m")
-    println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_sigma.pos_uncertainty_min, " m, Max: ", m_lin_ks_sigma.pos_uncertainty_max, " m")
-    if m_lin_ks_dyn !== nothing
-        println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_dyn.pos_uncertainty_min, " m, Max: ", m_lin_ks_dyn.pos_uncertainty_max, " m")
-    end
-    println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_uncertainty_rmse, " m, Min: ", m_mc_binned_ks.pos_uncertainty_min, " m, Max: ", m_mc_binned_ks.pos_uncertainty_max, " m")
+    (m_lin !== nothing) && println("    LinCov (Cartesian) - RMSE: ", m_lin.pos_uncertainty_rmse, " m, Min: ", m_lin.pos_uncertainty_min, " m, Max: ", m_lin.pos_uncertainty_max, " m")
+    (m_ut !== nothing) && println("    UT (Cartesian) - RMSE: ", m_ut.pos_uncertainty_rmse, " m, Min: ", m_ut.pos_uncertainty_min, " m, Max: ", m_ut.pos_uncertainty_max, " m")
+    (m_eigen_cart !== nothing) && println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.pos_uncertainty_rmse, " m, Min: ", m_eigen_cart.pos_uncertainty_min, " m, Max: ", m_eigen_cart.pos_uncertainty_max, " m")
+    (m_eigen_ks !== nothing) && println("    CKF (KS) - RMSE: ", m_eigen_ks.pos_uncertainty_rmse, " m, Min: ", m_eigen_ks.pos_uncertainty_min, " m, Max: ", m_eigen_ks.pos_uncertainty_max, " m")
+    (m_lin_ks_sigma !== nothing) && println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_sigma.pos_uncertainty_min, " m, Max: ", m_lin_ks_sigma.pos_uncertainty_max, " m")
+    (m_lin_ks_dyn !== nothing) && println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.pos_uncertainty_rmse, " m, Min: ", m_lin_ks_dyn.pos_uncertainty_min, " m, Max: ", m_lin_ks_dyn.pos_uncertainty_max, " m")
+    (m_mc_binned_ks !== nothing) && println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.pos_uncertainty_rmse, " m, Min: ", m_mc_binned_ks.pos_uncertainty_min, " m, Max: ", m_mc_binned_ks.pos_uncertainty_max, " m")
     println("  Velocity uncertainty errors:")
-    println("    Cartesian LinCov - RMSE: ", m_lin.vel_uncertainty_rmse, " m/s, Min: ", m_lin.vel_uncertainty_min, " m/s, Max: ", m_lin.vel_uncertainty_max, " m/s")
-    println("    UT (Cartesian) - RMSE: ", m_ut.vel_uncertainty_rmse, " m/s, Min: ", m_ut.vel_uncertainty_min, " m/s, Max: ", m_ut.vel_uncertainty_max, " m/s")
-    println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_cart.vel_uncertainty_min, " m/s, Max: ", m_eigen_cart.vel_uncertainty_max, " m/s")
-    println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_ks.vel_uncertainty_min, " m/s, Max: ", m_eigen_ks.vel_uncertainty_max, " m/s")
-    println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_sigma.vel_uncertainty_max, " m/s")
-    if m_lin_ks_dyn !== nothing
-        println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_dyn.vel_uncertainty_max, " m/s")
-    end
-    println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.vel_uncertainty_rmse, " m/s, Min: ", m_mc_binned_ks.vel_uncertainty_min, " m/s, Max: ", m_mc_binned_ks.vel_uncertainty_max, " m/s")
+    (m_lin !== nothing) && println("    LinCov (Cartesian) - RMSE: ", m_lin.vel_uncertainty_rmse, " m/s, Min: ", m_lin.vel_uncertainty_min, " m/s, Max: ", m_lin.vel_uncertainty_max, " m/s")
+    (m_ut !== nothing) && println("    UT (Cartesian) - RMSE: ", m_ut.vel_uncertainty_rmse, " m/s, Min: ", m_ut.vel_uncertainty_min, " m/s, Max: ", m_ut.vel_uncertainty_max, " m/s")
+    (m_eigen_cart !== nothing) && println("    CKF (Cartesian) - RMSE: ", m_eigen_cart.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_cart.vel_uncertainty_min, " m/s, Max: ", m_eigen_cart.vel_uncertainty_max, " m/s")
+    (m_eigen_ks !== nothing) && println("    CKF (KS) - RMSE: ", m_eigen_ks.vel_uncertainty_rmse, " m/s, Min: ", m_eigen_ks.vel_uncertainty_min, " m/s, Max: ", m_eigen_ks.vel_uncertainty_max, " m/s")
+    (m_lin_ks_sigma !== nothing) && println("    CKF (KS Relative) - RMSE: ", m_lin_ks_sigma.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_sigma.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_sigma.vel_uncertainty_max, " m/s")
+    (m_lin_ks_dyn !== nothing) && println("    LinCov (KS) - RMSE: ", m_lin_ks_dyn.vel_uncertainty_rmse, " m/s, Min: ", m_lin_ks_dyn.vel_uncertainty_min, " m/s, Max: ", m_lin_ks_dyn.vel_uncertainty_max, " m/s")
+    (m_mc_binned_ks !== nothing) && println("    Stratified KS CKF - RMSE: ", m_mc_binned_ks.vel_uncertainty_rmse, " m/s, Min: ", m_mc_binned_ks.vel_uncertainty_min, " m/s, Max: ", m_mc_binned_ks.vel_uncertainty_max, " m/s")
 end
 
