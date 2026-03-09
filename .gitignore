@@ -7,3 +7,5 @@ logs/
 
 # Miscellaneous
 .DS_Store
+# Local Netlify folder
+.netlify
