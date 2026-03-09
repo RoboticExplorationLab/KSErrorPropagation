@@ -1,10 +1,25 @@
 using Random
 using LinearAlgebra
+using Logging
 using ForwardDiff
 using DifferentialEquations
 using SatelliteDynamics
 
 const _SD = SatelliteDynamics
+
+function check_samples_inside_earth(samples::Vector{Vector{Float64}}, R_Earth::Real; label::String="", warn_only::Bool=false)
+    for (i, s) in enumerate(samples)
+        r_norm = norm(s[1:3])
+        if r_norm < R_Earth
+            msg = "$label: sample $i is inside the Earth (‖r‖ = $(round(r_norm, digits=1)) m < R_Earth = $(round(R_Earth, digits=1)) m)"
+            if warn_only
+                @warn msg
+            else
+                error(msg)
+            end
+        end
+    end
+end
 
 function compute_P0_from_oe_samples(oe_vec_0, σ_oe, GM, R_Earth; n_samples=10000)
     samples = sample_initial_states_orbital_elements(oe_vec_0, σ_oe, n_samples, GM, R_Earth)
@@ -62,6 +77,7 @@ function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 
     println("    Nominal OE: ", oe_vec_0)
     println("    σ_oe: ", σ_oe)
     samples_0 = sample_initial_states_orbital_elements(oe_vec_0, σ_oe, num_samples, sim_params.GM, sim_params.R_EARTH)
+    check_samples_inside_earth(samples_0, sim_params.R_EARTH; label="MC initialization", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
     # Pre-allocate trajectory storage
     samples_propagated = Vector{Vector{Vector{Float64}}}(undef, length(times))
@@ -83,6 +99,11 @@ function propagate_uncertainty_via_monte_carlo(x_vec_0, P_0, times, sim_params, 
         for t_idx in 1:length(times)
             samples_propagated[t_idx][i] = x_vec_traj_sample[t_idx]
         end
+    end
+
+    for t_idx in 1:length(times)
+        check_samples_inside_earth(samples_propagated[t_idx], sim_params.R_EARTH;
+            label="MC propagation at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
     end
 
     # Pre-allocate mean and covariance storage
@@ -254,41 +275,55 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     # Resample and propagate at each timestep
     println("  Propagating via Cartesian UT with resampling at each timestep...")
 
+    n_completed = 1
     for t_idx in 1:(length(times)-1)
-        # Generate sigma points from current mean and covariance
-        sigma_points, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_current, P_current)
-        num_sigma_points = length(sigma_points)
+        try
+            # Generate sigma points from current mean and covariance
+            sigma_points, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_current, P_current)
+            num_sigma_points = length(sigma_points)
+            check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
+                label="Cartesian UT sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
-        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
-        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+            # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+            sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
 
-        for i in 1:num_sigma_points
-            x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
-            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            for i in 1:num_sigma_points
+                x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
+                sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            end
+            check_samples_inside_earth(sigma_points_traj, sim_params.R_EARTH;
+                label="Cartesian UT propagated sigma points at t=$(times[t_idx+1]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
+
+            # Store propagated sigma points (before computing mean/cov)
+            if return_sigma_points
+                sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+            end
+
+            # Compute weighted mean and covariance
+            x_vec = zeros(6)
+            for i in 1:num_sigma_points
+                x_vec .+= w_m[i] .* sigma_points_traj[i]
+            end
+
+            P = zeros(6, 6)
+            for i in 1:num_sigma_points
+                diff = sigma_points_traj[i] .- x_vec
+                P .+= w_c[i] .* (diff * diff')
+            end
+
+            # Store results and update current state for next iteration
+            x_vec_traj[t_idx+1] = x_vec
+            P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+            x_vec_current = x_vec
+            P_current = (P + P') / 2.0  # Enforce symmetry
+            n_completed = t_idx + 1
+        catch e
+            @warn "Cartesian UT failed at t=$(times[t_idx+1]) s, returning partial results ($n_completed / $(length(times)) steps): $(sprint(showerror, e))"
+            x_vec_traj_partial = x_vec_traj[1:n_completed]
+            P_traj_partial = P_traj[1:n_completed]
+            sigma_points_partial = return_sigma_points ? sigma_points_all[1:n_completed] : nothing
+            return return_sigma_points ? (x_vec_traj_partial, P_traj_partial, sigma_points_partial) : (x_vec_traj_partial, P_traj_partial)
         end
-
-        # Store propagated sigma points (before computing mean/cov)
-        if return_sigma_points
-            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
-        end
-
-        # Compute weighted mean and covariance
-        x_vec = zeros(6)
-        for i in 1:num_sigma_points
-            x_vec .+= w_m[i] .* sigma_points_traj[i]
-        end
-
-        P = zeros(6, 6)
-        for i in 1:num_sigma_points
-            diff = sigma_points_traj[i] .- x_vec
-            P .+= w_c[i] .* (diff * diff')
-        end
-
-        # Store results and update current state for next iteration
-        x_vec_traj[t_idx+1] = x_vec
-        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
-        x_vec_current = x_vec
-        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
@@ -360,41 +395,55 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
     # Resample and propagate at each timestep
     println("  Propagating via Cartesian CKF with resampling at each timestep...")
 
+    n_completed = 1
     for t_idx in 1:(length(times)-1)
-        # Generate sigma points from current mean and covariance
-        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
-        num_sigma_points = length(sigma_points)
+        try
+            # Generate sigma points from current mean and covariance
+            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            num_sigma_points = length(sigma_points)
+            check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
+                label="Cartesian CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
-        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
-        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+            # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+            sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
 
-        for i in 1:num_sigma_points
-            x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
-            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            for i in 1:num_sigma_points
+                x_vec_traj_sigma, _ = propagate_cartesian_dynamics(sigma_points[i], [times[t_idx], times[t_idx+1]], sim_params)
+                sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            end
+            check_samples_inside_earth(sigma_points_traj, sim_params.R_EARTH;
+                label="Cartesian CKF propagated sigma points at t=$(times[t_idx+1]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
+
+            # Store propagated sigma points
+            if return_sigma_points
+                sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+            end
+
+            # Compute weighted mean and covariance
+            x_vec = zeros(6)
+            for i in 1:num_sigma_points
+                x_vec .+= w_m[i] .* sigma_points_traj[i]
+            end
+
+            P = zeros(6, 6)
+            for i in 1:num_sigma_points
+                diff = sigma_points_traj[i] .- x_vec
+                P .+= w_c[i] .* (diff * diff')
+            end
+
+            # Store results and update current state for next iteration
+            x_vec_traj[t_idx+1] = x_vec
+            P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+            x_vec_current = x_vec
+            P_current = (P + P') / 2.0  # Enforce symmetry
+            n_completed = t_idx + 1
+        catch e
+            @warn "Cartesian CKF failed at t=$(times[t_idx+1]) s, returning partial results ($n_completed / $(length(times)) steps): $(sprint(showerror, e))"
+            x_vec_traj_partial = x_vec_traj[1:n_completed]
+            P_traj_partial = P_traj[1:n_completed]
+            sigma_points_partial = return_sigma_points ? sigma_points_all[1:n_completed] : nothing
+            return return_sigma_points ? (x_vec_traj_partial, P_traj_partial, sigma_points_partial) : (x_vec_traj_partial, P_traj_partial)
         end
-
-        # Store propagated sigma points
-        if return_sigma_points
-            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
-        end
-
-        # Compute weighted mean and covariance
-        x_vec = zeros(6)
-        for i in 1:num_sigma_points
-            x_vec .+= w_m[i] .* sigma_points_traj[i]
-        end
-
-        P = zeros(6, 6)
-        for i in 1:num_sigma_points
-            diff = sigma_points_traj[i] .- x_vec
-            P .+= w_c[i] .* (diff * diff')
-        end
-
-        # Store results and update current state for next iteration
-        x_vec_traj[t_idx+1] = x_vec
-        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
-        x_vec_current = x_vec
-        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
@@ -419,41 +468,55 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
     # Resample and propagate at each timestep
     println("  Propagating via KS CKF with resampling at each timestep...")
 
+    n_completed = 1
     for t_idx in 1:(length(times)-1)
-        # Generate sigma points from current mean and covariance
-        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
-        num_sigma_points = length(sigma_points)
+        try
+            # Generate sigma points from current mean and covariance
+            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            num_sigma_points = length(sigma_points)
+            check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
+                label="KS CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
-        # Propagate each sigma point from times[t_idx] to times[t_idx+1]
-        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+            # Propagate each sigma point from times[t_idx] to times[t_idx+1]
+            sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
 
-        for i in 1:num_sigma_points
-            x_vec_traj_sigma, _ = propagate_ks_dynamics(sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
-            sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            for i in 1:num_sigma_points
+                x_vec_traj_sigma, _ = propagate_ks_dynamics(sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
+                sigma_points_traj[i] = x_vec_traj_sigma[end]  # Take the propagated state at times[t_idx+1]
+            end
+            check_samples_inside_earth(sigma_points_traj, sim_params.R_EARTH;
+                label="KS CKF propagated sigma points at t=$(times[t_idx+1]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
+
+            # Store propagated sigma points
+            if return_sigma_points
+                sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+            end
+
+            # Compute weighted mean and covariance
+            x_vec = zeros(6)
+            for i in 1:num_sigma_points
+                x_vec .+= w_m[i] .* sigma_points_traj[i]
+            end
+
+            P = zeros(6, 6)
+            for i in 1:num_sigma_points
+                diff = sigma_points_traj[i] .- x_vec
+                P .+= w_c[i] .* (diff * diff')
+            end
+
+            # Store results and update current state for next iteration
+            x_vec_traj[t_idx+1] = x_vec
+            P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+            x_vec_current = x_vec
+            P_current = (P + P') / 2.0  # Enforce symmetry
+            n_completed = t_idx + 1
+        catch e
+            @warn "KS CKF failed at t=$(times[t_idx+1]) s, returning partial results ($n_completed / $(length(times)) steps): $(sprint(showerror, e))"
+            x_vec_traj_partial = x_vec_traj[1:n_completed]
+            P_traj_partial = P_traj[1:n_completed]
+            sigma_points_partial = return_sigma_points ? sigma_points_all[1:n_completed] : nothing
+            return return_sigma_points ? (x_vec_traj_partial, P_traj_partial, sigma_points_partial) : (x_vec_traj_partial, P_traj_partial)
         end
-
-        # Store propagated sigma points
-        if return_sigma_points
-            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
-        end
-
-        # Compute weighted mean and covariance
-        x_vec = zeros(6)
-        for i in 1:num_sigma_points
-            x_vec .+= w_m[i] .* sigma_points_traj[i]
-        end
-
-        P = zeros(6, 6)
-        for i in 1:num_sigma_points
-            diff = sigma_points_traj[i] .- x_vec
-            P .+= w_c[i] .* (diff * diff')
-        end
-
-        # Store results and update current state for next iteration
-        x_vec_traj[t_idx+1] = x_vec
-        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
-        x_vec_current = x_vec
-        P_current = (P + P') / 2.0  # Enforce symmetry
     end
 
     return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
@@ -478,47 +541,61 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
     # Resample and propagate at each timestep
     println("  Propagating via KS Relative CKF with resampling at each timestep...")
 
+    n_completed = 1
     for t_idx in 1:(length(times)-1)
-        # Generate sigma points from current mean and covariance
-        sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
-        num_sigma_points = length(sigma_points)
+        try
+            # Generate sigma points from current mean and covariance
+            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            num_sigma_points = length(sigma_points)
+            check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
+                label="KS Relative CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
-        # Propagate each sigma point (deputy) from times[t_idx] to times[t_idx+1] using linearized KS relative dynamics
-        # Note: x_vec_current is the chief (mean), sigma_points[i] is the deputy
-        sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
+            # Propagate each sigma point (deputy) from times[t_idx] to times[t_idx+1] using linearized KS relative dynamics
+            # Note: x_vec_current is the chief (mean), sigma_points[i] is the deputy
+            sigma_points_traj = Vector{Vector{Float64}}(undef, num_sigma_points)
 
-        for i in 1:num_sigma_points
-            x_vec_traj_chief_i, x_vec_traj_rel_i, times_traj_chief_i, times_traj_deputy_i = propagate_ks_relative_dynamics(x_vec_current, sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
-            sigma_points_traj[i] = x_vec_traj_chief_i[end] + x_vec_traj_rel_i[end]
+            for i in 1:num_sigma_points
+                x_vec_traj_chief_i, x_vec_traj_rel_i, times_traj_chief_i, times_traj_deputy_i = propagate_ks_relative_dynamics(x_vec_current, sigma_points[i], [0.0, sim_params.sampling_time], sim_params)
+                sigma_points_traj[i] = x_vec_traj_chief_i[end] + x_vec_traj_rel_i[end]
 
-            if times_traj_chief_i[end] == 0.0 || times_traj_deputy_i[end] == 0.0
-                println("Propagation [", times[t_idx], ", ", times[t_idx+1], "] failed")
-                println("  times_traj_chief_i ", times_traj_chief_i, " times_traj_deputy_i ", times_traj_deputy_i)
+                if times_traj_chief_i[end] == 0.0 || times_traj_deputy_i[end] == 0.0
+                    println("Propagation [", times[t_idx], ", ", times[t_idx+1], "] failed")
+                    println("  times_traj_chief_i ", times_traj_chief_i, " times_traj_deputy_i ", times_traj_deputy_i)
+                end
             end
-        end
+            check_samples_inside_earth(sigma_points_traj, sim_params.R_EARTH;
+                label="KS Relative CKF propagated sigma points at t=$(times[t_idx+1]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
 
-        # Store propagated sigma points
-        if return_sigma_points
-            sigma_points_all[t_idx+1] = copy(sigma_points_traj)
-        end
+            # Store propagated sigma points
+            if return_sigma_points
+                sigma_points_all[t_idx+1] = copy(sigma_points_traj)
+            end
 
-        # Compute weighted mean and covariance
-        x_vec = zeros(6)
-        for i in 1:num_sigma_points
-            x_vec .+= w_m[i] .* sigma_points_traj[i]
-        end
+            # Compute weighted mean and covariance
+            x_vec = zeros(6)
+            for i in 1:num_sigma_points
+                x_vec .+= w_m[i] .* sigma_points_traj[i]
+            end
 
-        P = zeros(6, 6)
-        for i in 1:num_sigma_points
-            diff = sigma_points_traj[i] .- x_vec
-            P .+= w_c[i] .* (diff * diff')
-        end
+            P = zeros(6, 6)
+            for i in 1:num_sigma_points
+                diff = sigma_points_traj[i] .- x_vec
+                P .+= w_c[i] .* (diff * diff')
+            end
 
-        # Store results and update current state for next iteration
-        x_vec_traj[t_idx+1] = x_vec
-        P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
-        x_vec_current = x_vec
-        P_current = (P + P') / 2.0  # Enforce symmetry
+            # Store results and update current state for next iteration
+            x_vec_traj[t_idx+1] = x_vec
+            P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
+            x_vec_current = x_vec
+            P_current = (P + P') / 2.0  # Enforce symmetry
+            n_completed = t_idx + 1
+        catch e
+            @warn "KS Relative CKF failed at t=$(times[t_idx+1]) s, returning partial results ($n_completed / $(length(times)) steps): $(sprint(showerror, e))"
+            x_vec_traj_partial = x_vec_traj[1:n_completed]
+            P_traj_partial = P_traj[1:n_completed]
+            sigma_points_partial = return_sigma_points ? sigma_points_all[1:n_completed] : nothing
+            return return_sigma_points ? (x_vec_traj_partial, P_traj_partial, sigma_points_partial) : (x_vec_traj_partial, P_traj_partial)
+        end
     end
 
     return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
@@ -941,6 +1018,7 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
     # --- Step 1: Monte Carlo samples at t0 (OE space) ---
     oe_vec_0 = _SD.sCARTtoOSC(x_vec_0; GM=sim_params.GM, use_degrees=false)
     samples_cart = sample_initial_states_orbital_elements(oe_vec_0, oe_std, num_mc_samples, sim_params.GM, sim_params.R_EARTH)
+    check_samples_inside_earth(samples_cart, sim_params.R_EARTH; label="Energy-binned MC initialization", warn_only=get(sim_params, :inside_earth_warn_only, false))
     X0 = hcat(samples_cart...)  # 6 x N
 
     # --- Step 2-4: compute energies, sort, bin, and compute per-bin μ₀,k, P₀,k ---
@@ -1110,16 +1188,24 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
         println("    aggregation draw counts per bin: ", n_draw, " (sum=", sum(n_draw), ", total_draw=", total_draw, ")")
     end
 
-    T = length(times)
-    x_vec_traj = Vector{Vector{Float64}}(undef, T)
-    P_traj = Vector{Matrix{Float64}}(undef, T)
+    # Aggregate only up to the shortest bin (bins may return partial results)
+    T_agg = minimum(length(x_traj_bins[k]) for k in active_bins)
+    if T_agg == 0
+        error("All bins have empty trajectories; cannot aggregate.")
+    end
+    if T_agg < length(times) && verbose
+        @warn "Energy-Stratified: some bins returned partial results; aggregating only up to t=$(times[T_agg]) s ($T_agg / $(length(times)) steps)"
+    end
+
+    x_vec_traj = Vector{Vector{Float64}}(undef, T_agg)
+    P_traj = Vector{Matrix{Float64}}(undef, T_agg)
 
     # Optional: collect aggregated samples at every timestep
     if return_samples
-        samples_all = Vector{Vector{Vector{Float64}}}(undef, T)
+        samples_all = Vector{Vector{Vector{Float64}}}(undef, T_agg)
     end
 
-    for t_idx in 1:T
+    for t_idx in 1:T_agg
         Xagg = Matrix{Float64}(undef, 6, total_draw)
         col = 0
         for k in 1:num_energy_bins
@@ -1132,9 +1218,17 @@ function propagate_uncertainty_via_energy_binned_mc_then_ks_sigma_points(x_vec_0
             end
             μk = Vector{Float64}(x_traj_bins[k][t_idx])
             Pk = Matrix{Float64}(P_traj_bins[k][t_idx])
-            Xk = sample_gaussian(μk, Pk, nk)
-            Xagg[:, (col+1):(col+nk)] .= Xk
-            col += nk
+            try
+                Xk = sample_gaussian(μk, Pk, nk)
+                Xagg[:, (col+1):(col+nk)] .= Xk
+                col += nk
+            catch e
+                @warn "Energy-Stratified: sample_gaussian failed at t_idx=$t_idx (t=$(times[t_idx]) s) for bin $k: $(sprint(showerror, e)); returning partial results ($(t_idx-1) / $(length(times)) steps)"
+                x_vec_traj_partial = x_vec_traj[1:(t_idx-1)]
+                P_traj_partial = P_traj[1:(t_idx-1)]
+                samples_partial = return_samples ? samples_all[1:(t_idx-1)] : nothing
+                return return_samples ? (x_vec_traj_partial, P_traj_partial, samples_partial) : (x_vec_traj_partial, P_traj_partial)
+            end
         end
 
         μ, P = mean_and_cov_from_samples(Xagg)

@@ -20,6 +20,7 @@
 #   RANDOM_SEED             — seed for Random.seed! (reproducible runs)
 #   KS_RELATIVE_STATE_NORM_THRESHOLD — threshold on norm(ks_state_rel[1:4]) to choose
 #       separate vs together callback in KS relative dynamics (default 1e-7)
+#   inside_earth_warn_only           — if true, warn instead of error when samples go inside Earth (debugging)
 #
 # Helper (in error_propagation.jl):
 #   compute_P0_from_oe_samples(oe_vec_0, σ_oe, GM, R_Earth; n_samples=10000) → 6×6 Cartesian P_0
@@ -54,6 +55,10 @@ SIM_PARAMS = (
     # Success criteria thresholds
     max_pos_error_threshold = 1.0,    # meters
     max_vel_error_threshold = 0.01,   # m/s
+
+    # Inside-Earth check: if true, warn instead of error when samples go inside Earth.
+    # Useful for debugging; results are not physically meaningful when samples are inside.
+    inside_earth_warn_only = true,
 
     # Scaling factors (computed from orbit when nothing)
     t_scale = nothing,

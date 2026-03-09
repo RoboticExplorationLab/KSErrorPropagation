@@ -191,7 +191,7 @@ function main()
                 
                 # Create output filename (matching scripts/error_propagation_comparison.jl pattern)
                 fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
-                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).npz"
+                output_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))_num_samples$(Int(num_samples)).npz"
                 output_path = joinpath(data_dir, output_filename)
                 
                 println("\n" * "="^80)

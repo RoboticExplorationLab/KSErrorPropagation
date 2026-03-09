@@ -147,7 +147,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                         x_vec_traj, P_traj = result
                         sigma_points_traj = nothing
                     end
-                    println("  Completed: ", length(x_vec_traj), " states")
+                    println("  Completed: ", length(x_vec_traj), " states", (length(x_vec_traj) < length(times) ? " (partial)" : ""))
                     if sigma_points_traj !== nothing
                         println("  Sigma points/samples: ", length(sigma_points_traj[1]), " per timestep")
                     end
@@ -162,7 +162,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Monte Carlo (ground truth) - load from npz file if present, else run on the fly
             println("\n" * "="^80)
             data_dir = joinpath(@__DIR__, "..", "data")
-            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).npz"
+            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))_num_samples$(Int(num_samples)).npz"
             mc_filepath = joinpath(data_dir, mc_filename)
             if isfile(mc_filepath)
                 println("1. MONTE CARLO (Ground Truth) - Loading from file")
@@ -265,7 +265,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                         end
                         println("  Including ", num_points, " sigma points/samples per timestep")
                     end
-                    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.npz"
+                    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2])).npz"
                     filepath = joinpath(out_dir, filename)
                     NPZ.npzwrite(filepath, npz_dict)
                     println("  Saved: ", filepath)
@@ -521,176 +521,183 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Create plots
             println("\nGenerating plots...")
 
-            # KL divergence vs Monte Carlo (Gaussian approximation)
-            # Use the same N horizon as other metrics (min length across methods)
-            # Only compute for successful methods
-            kl_lin_cart = metrics_lin_cart !== nothing ? [gaussian_kl_divergence("2. LINCOV (Cartesian)", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_cart[i], P_traj_lin_cart[i]) for i in 1:N] : nothing
-            kl_ut_cart = metrics_ut_cart !== nothing ? [gaussian_kl_divergence("3. CARTESIAN UT", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_ut_cart[i], P_traj_ut_cart[i]) for i in 1:N] : nothing
-            kl_eigen_cart = metrics_eigen_cart !== nothing ? [gaussian_kl_divergence("4. CARTESIAN CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_eigen_cart[i], P_traj_eigen_cart[i]) for i in 1:N] : nothing
-            kl_eigen_ks = metrics_eigen_ks !== nothing ? [gaussian_kl_divergence("5. KS CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_eigen_ks[i], P_traj_eigen_ks[i]) for i in 1:N] : nothing
-            kl_lin_ks_sigma = metrics_lin_ks_sigma !== nothing ? [gaussian_kl_divergence("6. KS RELATIVE CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_ks_sigma[i], P_traj_lin_ks_sigma[i]) for i in 1:N] : nothing
-            kl_lin_ks_dyn = metrics_lin_ks_dyn !== nothing ? [gaussian_kl_divergence("7. KS LINCOV", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_ks_dyn[i], P_traj_lin_ks_dyn[i]) for i in 1:N] : nothing
-            kl_mc_binned_ks = metrics_mc_binned_ks !== nothing ? [gaussian_kl_divergence("8. ENERGY-STRATIFIED KS CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_mc_binned_ks[i], P_traj_mc_binned_ks[i]) for i in 1:N] : nothing
+            # Per-method lengths: plot each method over its full range (partial methods stop where they failed)
+            n_lin = metrics_lin_cart !== nothing ? length(metrics_lin_cart.pos_errors) : 0
+            n_ut = metrics_ut_cart !== nothing ? length(metrics_ut_cart.pos_errors) : 0
+            n_eigen = metrics_eigen_cart !== nothing ? length(metrics_eigen_cart.pos_errors) : 0
+            n_ks = metrics_eigen_ks !== nothing ? length(metrics_eigen_ks.pos_errors) : 0
+            n_ks_rel = metrics_lin_ks_sigma !== nothing ? length(metrics_lin_ks_sigma.pos_errors) : 0
+            n_lin_ks = metrics_lin_ks_dyn !== nothing ? length(metrics_lin_ks_dyn.pos_errors) : 0
+            n_binned = metrics_mc_binned_ks !== nothing ? length(metrics_mc_binned_ks.pos_errors) : 0
 
-            # Plot 1: Position error
+            # KL divergence vs Monte Carlo (per-method length)
+            kl_lin_cart = n_lin > 0 ? [gaussian_kl_divergence("2. LINCOV (Cartesian)", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_cart[i], P_traj_lin_cart[i]) for i in 1:n_lin] : nothing
+            kl_ut_cart = n_ut > 0 ? [gaussian_kl_divergence("3. CARTESIAN UT", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_ut_cart[i], P_traj_ut_cart[i]) for i in 1:n_ut] : nothing
+            kl_eigen_cart = n_eigen > 0 ? [gaussian_kl_divergence("4. CARTESIAN CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_eigen_cart[i], P_traj_eigen_cart[i]) for i in 1:n_eigen] : nothing
+            kl_eigen_ks = n_ks > 0 ? [gaussian_kl_divergence("5. KS CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_eigen_ks[i], P_traj_eigen_ks[i]) for i in 1:n_ks] : nothing
+            kl_lin_ks_sigma = n_ks_rel > 0 ? [gaussian_kl_divergence("6. KS RELATIVE CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_ks_sigma[i], P_traj_lin_ks_sigma[i]) for i in 1:n_ks_rel] : nothing
+            kl_lin_ks_dyn = n_lin_ks > 0 ? [gaussian_kl_divergence("7. KS LINCOV", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_lin_ks_dyn[i], P_traj_lin_ks_dyn[i]) for i in 1:n_lin_ks] : nothing
+            kl_mc_binned_ks = n_binned > 0 ? [gaussian_kl_divergence("8. ENERGY-STRATIFIED KS CKF", times[i], x_vec_traj_mean_mc[i], P_traj_mc[i], x_vec_traj_mean_mc_binned_ks[i], P_traj_mc_binned_ks[i]) for i in 1:n_binned] : nothing
+
+            # Plot 1: Position error (each method over its full range)
             p1 = plot(xlabel="Time (hours)", ylabel="Position Error (m)", yscale=:log10, legend=:topleft)
-            if metrics_lin_cart !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_lin_cart.pos_errors, label="LinCov (Cartesian)",
+            if n_lin > 0
+                plot!(p1, times[1:n_lin] ./ 3600, metrics_lin_cart.pos_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
-            if metrics_ut_cart !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_ut_cart.pos_errors, label="UT (Cartesian)",
+            if n_ut > 0
+                plot!(p1, times[1:n_ut] ./ 3600, metrics_ut_cart.pos_errors, label="UT (Cartesian)",
                     linewidth=2, color=:blue, linestyle=:dot)
             end
-            if metrics_eigen_cart !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_eigen_cart.pos_errors, label="CKF (Cartesian)",
+            if n_eigen > 0
+                plot!(p1, times[1:n_eigen] ./ 3600, metrics_eigen_cart.pos_errors, label="CKF (Cartesian)",
                     linewidth=2, color=:red, linestyle=:dashdot)
             end
-            if metrics_eigen_ks !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_eigen_ks.pos_errors, label="CKF (KS)",
+            if n_ks > 0
+                plot!(p1, times[1:n_ks] ./ 3600, metrics_eigen_ks.pos_errors, label="CKF (KS)",
                     linewidth=2, color=:orange, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_sigma !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_lin_ks_sigma.pos_errors, label="CKF (KS Relative)",
+            if n_ks_rel > 0
+                plot!(p1, times[1:n_ks_rel] ./ 3600, metrics_lin_ks_sigma.pos_errors, label="CKF (KS Relative)",
                     linewidth=2, color=:purple, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_dyn !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_lin_ks_dyn.pos_errors, label="LinCov (KS)",
+            if n_lin_ks > 0
+                plot!(p1, times[1:n_lin_ks] ./ 3600, metrics_lin_ks_dyn.pos_errors, label="LinCov (KS)",
                     linewidth=2, color=:brown, linestyle=:dot)
             end
-            if metrics_mc_binned_ks !== nothing
-                plot!(p1, times[1:N] ./ 3600, metrics_mc_binned_ks.pos_errors, label="Stratified KS CKF",
+            if n_binned > 0
+                plot!(p1, times[1:n_binned] ./ 3600, metrics_mc_binned_ks.pos_errors, label="Stratified KS CKF",
                     linewidth=2, color=:black, linestyle=:dash)
             end
 
-            # Plot 2: Velocity error
+            # Plot 2: Velocity error (each method over its full range)
             p2 = plot(xlabel="Time (hours)", ylabel="Velocity Error (m/s)", yscale=:log10, legend=:topleft)
-            if metrics_lin_cart !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_lin_cart.vel_errors, label="LinCov (Cartesian)",
+            if n_lin > 0
+                plot!(p2, times[1:n_lin] ./ 3600, metrics_lin_cart.vel_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
-            if metrics_ut_cart !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_ut_cart.vel_errors, label="UT (Cartesian)",
+            if n_ut > 0
+                plot!(p2, times[1:n_ut] ./ 3600, metrics_ut_cart.vel_errors, label="UT (Cartesian)",
                     linewidth=2, color=:blue, linestyle=:dot)
             end
-            if metrics_eigen_cart !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_eigen_cart.vel_errors, label="CKF (Cartesian)",
+            if n_eigen > 0
+                plot!(p2, times[1:n_eigen] ./ 3600, metrics_eigen_cart.vel_errors, label="CKF (Cartesian)",
                     linewidth=2, color=:red, linestyle=:dashdot)
             end
-            if metrics_eigen_ks !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_eigen_ks.vel_errors, label="CKF (KS)",
+            if n_ks > 0
+                plot!(p2, times[1:n_ks] ./ 3600, metrics_eigen_ks.vel_errors, label="CKF (KS)",
                     linewidth=2, color=:orange, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_sigma !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_lin_ks_sigma.vel_errors, label="CKF (KS Relative)",
+            if n_ks_rel > 0
+                plot!(p2, times[1:n_ks_rel] ./ 3600, metrics_lin_ks_sigma.vel_errors, label="CKF (KS Relative)",
                     linewidth=2, color=:purple, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_dyn !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_lin_ks_dyn.vel_errors, label="LinCov (KS)",
+            if n_lin_ks > 0
+                plot!(p2, times[1:n_lin_ks] ./ 3600, metrics_lin_ks_dyn.vel_errors, label="LinCov (KS)",
                     linewidth=2, color=:brown, linestyle=:dot)
             end
-            if metrics_mc_binned_ks !== nothing
-                plot!(p2, times[1:N] ./ 3600, metrics_mc_binned_ks.vel_errors, label="Stratified KS CKF",
+            if n_binned > 0
+                plot!(p2, times[1:n_binned] ./ 3600, metrics_mc_binned_ks.vel_errors, label="Stratified KS CKF",
                     linewidth=2, color=:black, linestyle=:dash)
             end
 
-            # Plot 3: Position uncertainty error
+            # Plot 3: Position uncertainty error (each method over its full range)
             p3 = plot(xlabel="Time (hours)", ylabel="Position Uncertainty Error (m)", yscale=:log10, legend=:topleft)
-            if metrics_lin_cart !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="LinCov (Cartesian)",
+            if n_lin > 0
+                plot!(p3, times[1:n_lin] ./ 3600, metrics_lin_cart.pos_uncertainty_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
-            if metrics_ut_cart !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_ut_cart.pos_uncertainty_errors, label="UT (Cartesian)",
+            if n_ut > 0
+                plot!(p3, times[1:n_ut] ./ 3600, metrics_ut_cart.pos_uncertainty_errors, label="UT (Cartesian)",
                     linewidth=2, color=:blue, linestyle=:dot)
             end
-            if metrics_eigen_cart !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_eigen_cart.pos_uncertainty_errors, label="CKF (Cartesian)",
+            if n_eigen > 0
+                plot!(p3, times[1:n_eigen] ./ 3600, metrics_eigen_cart.pos_uncertainty_errors, label="CKF (Cartesian)",
                     linewidth=2, color=:red, linestyle=:dashdot)
             end
-            if metrics_eigen_ks !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_eigen_ks.pos_uncertainty_errors, label="CKF (KS)",
+            if n_ks > 0
+                plot!(p3, times[1:n_ks] ./ 3600, metrics_eigen_ks.pos_uncertainty_errors, label="CKF (KS)",
                     linewidth=2, color=:orange, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_sigma !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_lin_ks_sigma.pos_uncertainty_errors, label="CKF (KS Relative)",
+            if n_ks_rel > 0
+                plot!(p3, times[1:n_ks_rel] ./ 3600, metrics_lin_ks_sigma.pos_uncertainty_errors, label="CKF (KS Relative)",
                     linewidth=2, color=:purple, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_dyn !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_lin_ks_dyn.pos_uncertainty_errors, label="LinCov (KS)",
+            if n_lin_ks > 0
+                plot!(p3, times[1:n_lin_ks] ./ 3600, metrics_lin_ks_dyn.pos_uncertainty_errors, label="LinCov (KS)",
                     linewidth=2, color=:brown, linestyle=:dot)
             end
-            if metrics_mc_binned_ks !== nothing
-                plot!(p3, times[1:N] ./ 3600, metrics_mc_binned_ks.pos_uncertainty_errors, label="Stratified KS CKF",
+            if n_binned > 0
+                plot!(p3, times[1:n_binned] ./ 3600, metrics_mc_binned_ks.pos_uncertainty_errors, label="Stratified KS CKF",
                     linewidth=2, color=:black, linestyle=:dash)
             end
 
-            # Plot 4: Velocity uncertainty error
+            # Plot 4: Velocity uncertainty error (each method over its full range)
             p4 = plot(xlabel="Time (hours)", ylabel="Velocity Uncertainty Error (m/s)", yscale=:log10, legend=:topleft)
-            if metrics_lin_cart !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="LinCov (Cartesian)",
+            if n_lin > 0
+                plot!(p4, times[1:n_lin] ./ 3600, metrics_lin_cart.vel_uncertainty_errors, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
-            if metrics_ut_cart !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_ut_cart.vel_uncertainty_errors, label="UT (Cartesian)",
+            if n_ut > 0
+                plot!(p4, times[1:n_ut] ./ 3600, metrics_ut_cart.vel_uncertainty_errors, label="UT (Cartesian)",
                     linewidth=2, color=:blue, linestyle=:dot)
             end
-            if metrics_eigen_cart !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_eigen_cart.vel_uncertainty_errors, label="CKF (Cartesian)",
+            if n_eigen > 0
+                plot!(p4, times[1:n_eigen] ./ 3600, metrics_eigen_cart.vel_uncertainty_errors, label="CKF (Cartesian)",
                     linewidth=2, color=:red, linestyle=:dashdot)
             end
-            if metrics_eigen_ks !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_eigen_ks.vel_uncertainty_errors, label="CKF (KS)",
+            if n_ks > 0
+                plot!(p4, times[1:n_ks] ./ 3600, metrics_eigen_ks.vel_uncertainty_errors, label="CKF (KS)",
                     linewidth=2, color=:orange, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_sigma !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_lin_ks_sigma.vel_uncertainty_errors, label="CKF (KS Relative)",
+            if n_ks_rel > 0
+                plot!(p4, times[1:n_ks_rel] ./ 3600, metrics_lin_ks_sigma.vel_uncertainty_errors, label="CKF (KS Relative)",
                     linewidth=2, color=:purple, linestyle=:dashdotdot)
             end
-            if metrics_lin_ks_dyn !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_lin_ks_dyn.vel_uncertainty_errors, label="LinCov (KS)",
+            if n_lin_ks > 0
+                plot!(p4, times[1:n_lin_ks] ./ 3600, metrics_lin_ks_dyn.vel_uncertainty_errors, label="LinCov (KS)",
                     linewidth=2, color=:brown, linestyle=:dot)
             end
-            if metrics_mc_binned_ks !== nothing
-                plot!(p4, times[1:N] ./ 3600, metrics_mc_binned_ks.vel_uncertainty_errors, label="Stratified KS CKF",
+            if n_binned > 0
+                plot!(p4, times[1:n_binned] ./ 3600, metrics_mc_binned_ks.vel_uncertainty_errors, label="Stratified KS CKF",
                     linewidth=2, color=:black, linestyle=:dash)
             end
 
-            # Plot 5: KL divergence (Gaussian approx) vs Monte Carlo
+            # Plot 5: KL divergence (each method over its full range)
             p5 = plot(xlabel="Time (hours)", ylabel="KL Divergence", yscale=:log10, legend=:topleft)
             if kl_lin_cart !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_lin_cart, label="LinCov (Cartesian)",
+                plot!(p5, times[1:n_lin] ./ 3600, kl_lin_cart, label="LinCov (Cartesian)",
                     linewidth=2, color=:green, linestyle=:dash)
             end
             if kl_ut_cart !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_ut_cart, label="UT (Cartesian)",
+                plot!(p5, times[1:n_ut] ./ 3600, kl_ut_cart, label="UT (Cartesian)",
                     linewidth=2, color=:blue, linestyle=:dot)
             end
             if kl_eigen_cart !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_eigen_cart, label="CKF (Cartesian)",
+                plot!(p5, times[1:n_eigen] ./ 3600, kl_eigen_cart, label="CKF (Cartesian)",
                     linewidth=2, color=:red, linestyle=:dashdot)
             end
             if kl_eigen_ks !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_eigen_ks, label="CKF (KS)",
+                plot!(p5, times[1:n_ks] ./ 3600, kl_eigen_ks, label="CKF (KS)",
                     linewidth=2, color=:orange, linestyle=:dashdotdot)
             end
             if kl_lin_ks_sigma !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_lin_ks_sigma, label="CKF (KS Relative)",
+                plot!(p5, times[1:n_ks_rel] ./ 3600, kl_lin_ks_sigma, label="CKF (KS Relative)",
                     linewidth=2, color=:purple, linestyle=:dashdotdot)
             end
             if kl_lin_ks_dyn !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_lin_ks_dyn, label="LinCov (KS)",
+                plot!(p5, times[1:n_lin_ks] ./ 3600, kl_lin_ks_dyn, label="LinCov (KS)",
                     linewidth=2, color=:brown, linestyle=:dot)
             end
             if kl_mc_binned_ks !== nothing
-                plot!(p5, times[1:N] ./ 3600, kl_mc_binned_ks, label="Stratified KS CKF",
+                plot!(p5, times[1:n_binned] ./ 3600, kl_mc_binned_ks, label="Stratified KS CKF",
                     linewidth=2, color=:black, linestyle=:dash)
             end
 
             # Generate filename based on scenario
             figdir = joinpath(@__DIR__, "..", "figs")
             mkpath(figdir)
-            filename = joinpath(figdir, "error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_samples)).png")
+            filename = joinpath(figdir, "error_propagation_comparison_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))_num_samples$(Int(num_samples)).png")
 
             # Combine plots with increased left margin for y-axis labels
             # Use wider size and set margins explicitly to ensure y-labels are visible

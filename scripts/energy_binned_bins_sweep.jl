@@ -157,7 +157,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             
             # Construct filename matching save_monte_carlo_npz.jl pattern
             data_dir = joinpath(@__DIR__, "..", "data")
-            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_samples$(Int(num_mc_samples_ground_truth)).npz"
+            mc_filename = "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))_num_samples$(Int(num_mc_samples_ground_truth)).npz"
             mc_filepath = joinpath(data_dir, mc_filename)
             
             if !isfile(mc_filepath)
@@ -379,7 +379,7 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             # Generate filename and save (5 vertically stacked plots, same structure as error_propagation_comparison)
             figdir = joinpath(@__DIR__, "..", "figs")
             mkpath(figdir)
-            filename = joinpath(figdir, "energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_num_bins$(join(num_energy_bins_list, "-")).png")
+            filename = joinpath(figdir, "energy_binned_bins_sweep_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))_num_bins$(join(num_energy_bins_list, "-")).png")
 
             # Combine plots: 5 stacked vertically, size matching error_propagation_comparison
             p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(1000, 2000), left_margin=50Plots.px)
@@ -419,11 +419,11 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 println("\n" * "="^80)
                 println("SAVING APPROACH RESULTS TO out/")
                 println("="^80)
-                save_approach_npz(out_dir, "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m", orbit, num_orbits, oe_std, times, x_vec_traj_mean_mc, P_traj_mc)
+                save_approach_npz(out_dir, "mc_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))", orbit, num_orbits, oe_std, times, x_vec_traj_mean_mc, P_traj_mc)
                 for num_bins in num_energy_bins_list
                     result = results_by_bins[num_bins]
                     if !result.failed
-                        approach_id = "stratified_ks_num_bins$(num_bins)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m"
+                        approach_id = "stratified_ks_num_bins$(num_bins)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2]))"
                         save_approach_npz(out_dir, approach_id, orbit, num_orbits, oe_std, times, result.x_vec_traj, result.P_traj; sigma_points_traj=result.sigma_points_traj)
                     end
                 end

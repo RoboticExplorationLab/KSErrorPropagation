@@ -11,7 +11,7 @@ Usage:
 
 The out/ directory should contain NPZ files produced by
 scripts/error_propagation_comparison.jl with the naming convention:
-    {approach_id}_{orbit_id}_num_orbits{N}_oe_std_a{σ_a}m.npz
+    {approach_id}_{orbit_id}_num_orbits{N}_oe_std_a{σ_a}m_std_e{σ_e}.npz
 """
 
 using Pkg
@@ -62,7 +62,7 @@ mkpath(figs_dir)
 # ── Helper: load approach NPZ → (x_vec_traj, P_traj, times) ────────────────
 fname_num(x) = isinteger(x) ? string(Int(x)) : string(x)
 function load_approach(dir, approach_id, orbit, num_orbits, oe_std)
-    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.npz"
+    filename = "$(approach_id)_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2])).npz"
     filepath = joinpath(dir, filename)
     if !isfile(filepath)
         return nothing
@@ -194,7 +194,7 @@ for orbit in TEST_ORBITS
             p_combined = plot(p1, p2, p3, p4, p5,
                 layout=(5, 1), size=(1000, 2000), left_margin=50Plots.px)
 
-            figname = joinpath(figs_dir, "compare_approaches_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m.png")
+            figname = joinpath(figs_dir, "compare_approaches_$(orbit.id)_num_orbits$(Int(num_orbits))_oe_std_a$(fname_num(oe_std[1]))m_std_e$(fname_num(oe_std[2])).png")
             savefig(p_combined, figname)
             println("  Saved figure: ", figname)
 
