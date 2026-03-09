@@ -5,6 +5,8 @@ Similar to scripts/error_propagation_comparison.jl but saves individual samples.
 Usage:
     julia scripts/run_monte_carlo.jl [config.jl]
 
+If config.jl is provided, it is loaded (e.g. config/molniya.jl). Otherwise config/default.jl is used.
+
 The script saves data to data/ at project root with format:
     - x: mean state vector trajectory (N, 6) where N is number of time steps
     - P: covariance matrix trajectory (N, 6, 6)
@@ -40,8 +42,17 @@ include(joinpath(@__DIR__, "..", "src", "cartesian_dynamics.jl"))
 include(joinpath(@__DIR__, "..", "src", "error_propagation.jl"))
 include(joinpath(@__DIR__, "..", "src", "utils.jl"))
 
-# Load shared configuration
-include(joinpath(@__DIR__, "..", "config", "default.jl"))
+# Load configuration (default or user-specified, e.g. config/molniya.jl)
+if length(ARGS) >= 1
+    config_path = ARGS[1]
+    if !isabspath(config_path)
+        config_path = joinpath(@__DIR__, "..", config_path)
+    end
+    println("Loading config: ", config_path)
+    include(config_path)
+else
+    include(joinpath(@__DIR__, "..", "config", "default.jl"))
+end
 
 using Random
 Random.seed!(RANDOM_SEED)
