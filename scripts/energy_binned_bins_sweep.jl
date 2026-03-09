@@ -16,10 +16,30 @@ include("../src/error_propagation.jl")
 include("../src/utils.jl")
 
 # Load shared configuration
-include(joinpath(@__DIR__, "..", "config", "default.jl"))
+# Usage: julia script.jl [config.jl] [save]
+#   config.jl: optional path to config file (default: config/default.jl)
+#   save: optional flag to save results to out/
+function resolve_config_path(p)
+    if isfile(p)
+        return abspath(p)
+    end
+    # Try relative to project root (scripts/../)
+    root = abspath(joinpath(@__DIR__, ".."))
+    full = joinpath(root, p)
+    return isfile(full) ? abspath(full) : abspath(p)
+end
 
-# Save approach results to out/ (default: false). Usage: julia script.jl [save]
-save_to_out = length(ARGS) >= 1 && (ARGS[1] == "save" || lowercase(ARGS[1]) == "true")
+config_path = joinpath(@__DIR__, "..", "config", "default.jl")
+arg_idx = 1
+if length(ARGS) >= 1 && endswith(ARGS[1], ".jl")
+    config_path = resolve_config_path(ARGS[1])
+    arg_idx = 2
+end
+include(config_path)
+println("Config loaded: ", config_path)
+
+# Save approach results to out/ (default: false)
+save_to_out = length(ARGS) >= arg_idx && (ARGS[arg_idx] == "save" || lowercase(ARGS[arg_idx]) == "true")
 
 using Random
 Random.seed!(RANDOM_SEED)

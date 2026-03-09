@@ -120,4 +120,4 @@ NUM_ENERGY_BINS = 10
 NUM_ENERGY_BINS_LIST = [1, 2, 5, 10, 20, 50]
 
 # Energy-stratified: minimum samples per bin; bins with ≤ this are dropped symmetrically
-MIN_SAMPLES_THRESHOLD = 6
+MIN_SAMPLES_THRESHOLD = 7
