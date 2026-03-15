@@ -12,36 +12,9 @@ TEST_ORBITS = [
         id = "mol"),
 ]
 
-# NUM_MC_SAMPLES = 100
-
-########################################################
-# Does not work for any
-# OE_INITIAL_STD_SCENARIOS = [
-#     [1e3, 0.001, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
-#     [5e4, 0.000001, deg2rad(0.000001), deg2rad(0.000001), deg2rad(0.000001), deg2rad(0.000001)],
-#     [1e5, 0.000001, deg2rad(0.000001), deg2rad(0.000001), deg2rad(0.000001), deg2rad(0.000001)]
-# ]
-########################################################
-
-# # (1) Works for all
-# OE_INITIAL_STD_SCENARIOS = [
-#     [1e3, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-# ]
-
-# # (2) Works for Cartesian LinCov, UT, and Energy-Stratified KS CKF
-# OE_INITIAL_STD_SCENARIOS = [
-#     [5e3, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-# ]
-
-# # (3) Works for Cartesian LinCov and Energy-Stratified KS CKF
-# OE_INITIAL_STD_SCENARIOS = [
-#     [1e4, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-# ]
-
 OE_INITIAL_STD_SCENARIOS = [
-    [1e3, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],    
-    [5e3, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-    [1e4, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-    [5e4, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)],
-    [1e5, 0.00001, deg2rad(0.001), deg2rad(0.001), deg2rad(0.001), deg2rad(0.001)]
+    [1e3,  1e-5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+    [5e3,  1e-5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+    [10e3, 1e-5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)],
+    [20e3, 1e-5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1), deg2rad(1.0)]
 ]

@@ -60,6 +60,11 @@ SIM_PARAMS = (
     # Useful for debugging; results are not physically meaningful when samples are inside.
     inside_earth_warn_only = true,
 
+    # Minimum altitude margin (m) above R_EARTH for sigma-point validity.
+    # Sigma points with ||r|| < R_EARTH + drag_altitude_margin are considered invalid
+    # and trigger adaptive scaling of all sigma-point offsets.
+    drag_altitude_margin = 100e3,
+
     # Scaling factors (computed from orbit when nothing)
     t_scale = nothing,
     r_scale = nothing,

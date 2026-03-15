@@ -213,7 +213,58 @@ function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, t
     return x_vec_traj, P_traj
 end
 
-function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0, κ=0.0)
+"""
+    compute_safe_sigma_scale(r_mean, scaled_offsets_pos, r_min; t=nothing) -> Float64
+
+Compute the largest uniform scale factor `s ∈ (0, 1]` such that every sigma point
+`r_mean ± s * d_pos` satisfies `‖r‖ ≥ r_min`.
+
+For each offset direction `d_pos`, the constraint `‖r_mean ± s·d_pos‖² ≥ r_min²`
+yields the quadratic `A·s² + B·s + C ≥ 0` with `A = ‖d_pos‖²`, `C = ‖r_mean‖² − r_min²`.
+Since the parabola opens upward and `f(0) = C ≥ 0` (valid mean), the first positive
+root `s₁` is the maximum safe scale for that direction.  The overall safe scale is
+`min(s₁)` across all directions/signs.
+"""
+function compute_safe_sigma_scale(r_mean, scaled_offsets_pos, r_min; t::Union{Nothing,Float64}=nothing)
+    R2 = dot(r_mean, r_mean)
+    r_min2 = r_min * r_min
+    C = R2 - r_min2
+    t_str = t === nothing ? "" : " at t=$(round(t, digits=1)) s"
+
+    if C < 0.0
+        @warn "Mean position is below r_min$t_str (‖r‖ = $(sqrt(R2)) m, r_min = $r_min m); scaling cannot help"
+        return 1.0
+    end
+
+    s_safe = 1.0
+
+    for d_pos in scaled_offsets_pos
+        A = dot(d_pos, d_pos)
+        if A < 1e-30
+            continue
+        end
+
+        for sign in (1.0, -1.0)
+            B = 2.0 * sign * dot(r_mean, d_pos)
+            disc = B * B - 4.0 * A * C
+            if disc < 0.0
+                continue
+            end
+            s1 = (-B - sqrt(disc)) / (2.0 * A)
+            if s1 > 0.0
+                s_safe = min(s_safe, s1)
+            end
+        end
+    end
+
+    if s_safe < 1.0
+        @warn "Adaptive sigma-point scaling$t_str: reduced scale to $(round(s_safe, digits=6)) (r_min = $(round(r_min, digits=1)) m)"
+    end
+
+    return s_safe
+end
+
+function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0, κ=0.0, r_min::Union{Nothing,Float64}=nothing, t::Union{Nothing,Float64}=nothing)
     # Compute Unscented Transform parameters
     n = length(x_vec)
     λ = α^2 * (n + κ) - n  # Scaling parameter
@@ -221,6 +272,14 @@ function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0
 
     # Generate sigma points using Cholesky decomposition: P = L * L'
     L_chol = cholesky(P).L
+
+    # Adaptive scaling: reduce γ if any sigma point would violate r_min
+    s = 1.0
+    if r_min !== nothing
+        offsets_pos = [γ * L_chol[1:3, i] for i in 1:n]
+        s = compute_safe_sigma_scale(x_vec[1:3], offsets_pos, r_min; t=t)
+        γ *= s
+    end
 
     # Generate 2n+1 sigma points
     num_sigma_points = 2 * n + 1
@@ -253,7 +312,7 @@ function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0
         w_c[i] = 1.0 / (2.0 * (n + λ))
     end
 
-    return sigma_points, w_m, w_c
+    return sigma_points, w_m, w_c, s
 end
 
 function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
@@ -265,10 +324,12 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    r_min = sim_params.R_EARTH + get(sim_params, :drag_altitude_margin, 100e3)
+
     # Optional: collect propagated sigma points at every timestep
     if return_sigma_points
         sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
-        sp_0, _, _ = generate_sigma_points_via_unscented_transform(x_vec_0, P_0)
+        sp_0, _, _, _ = generate_sigma_points_via_unscented_transform(x_vec_0, P_0; r_min=r_min, t=times[1])
         sigma_points_all[1] = sp_0  # initial sigma points at t=0
     end
 
@@ -279,7 +340,7 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     for t_idx in 1:(length(times)-1)
         try
             # Generate sigma points from current mean and covariance
-            sigma_points, w_m, w_c = generate_sigma_points_via_unscented_transform(x_vec_current, P_current)
+            sigma_points, w_m, w_c, s = generate_sigma_points_via_unscented_transform(x_vec_current, P_current; r_min=r_min, t=times[t_idx])
             num_sigma_points = length(sigma_points)
             check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
                 label="Cartesian UT sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
@@ -311,6 +372,12 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
                 P .+= w_c[i] .* (diff * diff')
             end
 
+            # Compensate for adaptive scaling: sigma points sampled from s²P,
+            # so propagated covariance ≈ s² · true covariance (linear approx).
+            if s < 1.0
+                P ./= (s * s)
+            end
+
             # Store results and update current state for next iteration
             x_vec_traj[t_idx+1] = x_vec
             P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
@@ -329,7 +396,7 @@ function propagate_uncertainty_via_cartesian_unscented_transform(x_vec_0, P_0, t
     return return_sigma_points ? (x_vec_traj, P_traj, sigma_points_all) : (x_vec_traj, P_traj)
 end
 
-function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=false)
+function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecomposition=false, r_min::Union{Nothing,Float64}=nothing, t::Union{Nothing,Float64}=nothing)
     # Cubature rule (spherical-radial cubature rule)
     # Uses 2n sigma points with equal weights
     # This is a third-degree rule (exact for polynomials up to degree 3)
@@ -346,24 +413,37 @@ function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecompositio
         Q = eigen_decomp.vectors  # Eigenvectors (columns)
         λ_eigen = eigen_decomp.values  # Eigenvalues
 
-        # Generate sigma points: x ± sqrt(n) * sqrt(λ_i) * q_i
-        # Note: sqrt(n) * sqrt(λ_i) = sqrt(n * λ_i)
+        # Adaptive scaling: reduce offsets if any sigma point would violate r_min
+        s = 1.0
+        if r_min !== nothing
+            offsets_pos = [sqrt_n * sqrt(λ_eigen[i]) * Q[1:3, i] for i in 1:n]
+            s = compute_safe_sigma_scale(x_vec[1:3], offsets_pos, r_min; t=t)
+        end
+
+        # Generate sigma points: x ± s * sqrt(n) * sqrt(λ_i) * q_i
         for i in 1:n
             q_i = Q[:, i]  # i-th eigenvector
             sqrt_λ_i = sqrt(λ_eigen[i])
-            sigma_points[i] = x_vec .+ sqrt_n .* sqrt_λ_i .* q_i
-            sigma_points[n+i] = x_vec .- sqrt_n .* sqrt_λ_i .* q_i
+            sigma_points[i] = x_vec .+ (s * sqrt_n * sqrt_λ_i) .* q_i
+            sigma_points[n+i] = x_vec .- (s * sqrt_n * sqrt_λ_i) .* q_i
         end
     else
         # Use Cholesky decomposition: P = L * L'
         L_chol = cholesky(P).L
 
-        # Generate sigma points: x ± sqrt(n) * L_i
+        # Adaptive scaling: reduce offsets if any sigma point would violate r_min
+        s = 1.0
+        if r_min !== nothing
+            offsets_pos = [sqrt_n * L_chol[1:3, i] for i in 1:n]
+            s = compute_safe_sigma_scale(x_vec[1:3], offsets_pos, r_min; t=t)
+        end
+
+        # Generate sigma points: x ± s * sqrt(n) * L_i
         # where L_i is the i-th column of the Cholesky factor
         for i in 1:n
             col = L_chol[:, i]
-            sigma_points[i] = x_vec .+ sqrt_n .* col
-            sigma_points[n+i] = x_vec .- sqrt_n .* col
+            sigma_points[i] = x_vec .+ (s * sqrt_n) .* col
+            sigma_points[n+i] = x_vec .- (s * sqrt_n) .* col
         end
     end
 
@@ -373,7 +453,7 @@ function generate_sigma_points_via_cubature_rule(x_vec, P; use_eigendecompositio
     w_m = fill(w, num_sigma_points)
     w_c = fill(w, num_sigma_points)
 
-    return sigma_points, w_m, w_c
+    return sigma_points, w_m, w_c, s
 end
 
 function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, sim_params; return_sigma_points::Bool=false)
@@ -385,10 +465,12 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    r_min = sim_params.R_EARTH + get(sim_params, :drag_altitude_margin, 100e3)
+
     # Optional: collect propagated sigma points at every timestep
     if return_sigma_points
         sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
-        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sp_0, _, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0; r_min=r_min, t=times[1])
         sigma_points_all[1] = sp_0
     end
 
@@ -399,7 +481,7 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
     for t_idx in 1:(length(times)-1)
         try
             # Generate sigma points from current mean and covariance
-            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            sigma_points, w_m, w_c, s = generate_sigma_points_via_cubature_rule(x_vec_current, P_current; r_min=r_min, t=times[t_idx])
             num_sigma_points = length(sigma_points)
             check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
                 label="Cartesian CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
@@ -431,6 +513,12 @@ function propagate_uncertainty_via_cartesian_sigma_points(x_vec_0, P_0, times, s
                 P .+= w_c[i] .* (diff * diff')
             end
 
+            # Compensate for adaptive scaling: sigma points sampled from s²P,
+            # so propagated covariance ≈ s² · true covariance (linear approx).
+            if s < 1.0
+                P ./= (s * s)
+            end
+
             # Store results and update current state for next iteration
             x_vec_traj[t_idx+1] = x_vec
             P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
@@ -458,10 +546,12 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    r_min = sim_params.R_EARTH + get(sim_params, :drag_altitude_margin, 100e3)
+
     # Optional: collect propagated sigma points at every timestep
     if return_sigma_points
         sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
-        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sp_0, _, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0; r_min=r_min, t=times[1])
         sigma_points_all[1] = sp_0
     end
 
@@ -472,7 +562,7 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
     for t_idx in 1:(length(times)-1)
         try
             # Generate sigma points from current mean and covariance
-            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            sigma_points, w_m, w_c, s = generate_sigma_points_via_cubature_rule(x_vec_current, P_current; r_min=r_min, t=times[t_idx])
             num_sigma_points = length(sigma_points)
             check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
                 label="KS CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
@@ -504,6 +594,11 @@ function propagate_uncertainty_via_ks_sigma_points(x_vec_0, P_0, times, sim_para
                 P .+= w_c[i] .* (diff * diff')
             end
 
+            # Compensate for adaptive scaling
+            if s < 1.0
+                P ./= (s * s)
+            end
+
             # Store results and update current state for next iteration
             x_vec_traj[t_idx+1] = x_vec
             P_traj[t_idx+1] = (P + P') / 2.0  # Enforce symmetry
@@ -531,10 +626,12 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
     x_vec_current = copy(x_vec_0)
     P_current = copy(P_0)
 
+    r_min = sim_params.R_EARTH + get(sim_params, :drag_altitude_margin, 100e3)
+
     # Optional: collect propagated sigma points at every timestep
     if return_sigma_points
         sigma_points_all = Vector{Vector{Vector{Float64}}}(undef, length(times))
-        sp_0, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0)
+        sp_0, _, _, _ = generate_sigma_points_via_cubature_rule(x_vec_0, P_0; r_min=r_min, t=times[1])
         sigma_points_all[1] = sp_0
     end
 
@@ -545,7 +642,7 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
     for t_idx in 1:(length(times)-1)
         try
             # Generate sigma points from current mean and covariance
-            sigma_points, w_m, w_c = generate_sigma_points_via_cubature_rule(x_vec_current, P_current)
+            sigma_points, w_m, w_c, s = generate_sigma_points_via_cubature_rule(x_vec_current, P_current; r_min=r_min, t=times[t_idx])
             num_sigma_points = length(sigma_points)
             check_samples_inside_earth(sigma_points, sim_params.R_EARTH;
                 label="KS Relative CKF sigma points at t=$(times[t_idx]) s", warn_only=get(sim_params, :inside_earth_warn_only, false))
@@ -581,6 +678,11 @@ function propagate_uncertainty_via_linearized_ks_sigma_points(x_vec_0, P_0, time
             for i in 1:num_sigma_points
                 diff = sigma_points_traj[i] .- x_vec
                 P .+= w_c[i] .* (diff * diff')
+            end
+
+            # Compensate for adaptive scaling
+            if s < 1.0
+                P ./= (s * s)
             end
 
             # Store results and update current state for next iteration
