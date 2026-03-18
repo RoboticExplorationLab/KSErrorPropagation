@@ -1,11 +1,9 @@
-# Julia
 Manifest.toml
 test_old/
 data/
 out/
 logs/
-
-# Miscellaneous
 .DS_Store
-# Local Netlify folder
 .netlify
+report/
+papers/
