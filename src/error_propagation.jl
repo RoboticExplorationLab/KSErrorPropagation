@@ -213,6 +213,179 @@ function propagate_uncertainty_via_linearized_cartesian_dynamics(x_vec_0, P_0, t
     return x_vec_traj, P_traj
 end
 
+function _oe_to_mee(oe_vec)
+    a = oe_vec[1]
+    e = oe_vec[2]
+    i = oe_vec[3]
+    Ω = oe_vec[4]
+    ω = oe_vec[5]
+    M = oe_vec[6]
+
+    p = a * (1 - e^2)
+    f = e * cos(ω + Ω)
+    g = e * sin(ω + Ω)
+    h = tan(i / 2) * cos(Ω)
+    k = tan(i / 2) * sin(Ω)
+
+    E = M
+    for _ in 1:15
+        E = E - (E - e * sin(E) - M) / (1 - e * cos(E))
+    end
+    ν = 2 * atan(sqrt(1 + e) * sin(E / 2), sqrt(1 - e) * cos(E / 2))
+    L = Ω + ω + ν
+
+    return [p, f, g, h, k, L]
+end
+
+function _mee_to_cartesian_ad(mee_vec, GM)
+    p = mee_vec[1]
+    f = mee_vec[2]
+    g = mee_vec[3]
+    h = mee_vec[4]
+    k = mee_vec[5]
+    L = mee_vec[6]
+
+    cosL = cos(L)
+    sinL = sin(L)
+
+    α2 = h^2 - k^2
+    s2 = 1 + h^2 + k^2
+    w = 1 + f * cosL + g * sinL
+    r = p / w
+
+    rx = (r / s2) * ((1 + α2) * cosL + 2 * h * k * sinL)
+    ry = (r / s2) * ((1 - α2) * sinL + 2 * h * k * cosL)
+    rz = (2 * r / s2) * (h * sinL - k * cosL)
+
+    sq_mu_p = sqrt(GM / p)
+    vx = -(sq_mu_p / s2) * ((1 + α2) * (sinL + g) - 2 * h * k * (cosL + f))
+    vy = -(sq_mu_p / s2) * (-(1 - α2) * (cosL + f) + 2 * h * k * (sinL + g))
+    vz = (2 * sq_mu_p / s2) * (h * (cosL + f) + k * (sinL + g))
+
+    return [rx, ry, rz, vx, vy, vz]
+end
+
+function propagate_uncertainty_via_linearized_oe_dynamics(x_vec_0, P_0, times, sim_params; oe_std)
+    GM = sim_params.GM
+
+    # Step 1: Convert initial Cartesian → classical OE → MEE
+    oe_vec_0 = _SD.sCARTtoOSC(x_vec_0; GM=GM, use_degrees=false)
+    mee_vec_0 = _oe_to_mee(oe_vec_0)
+
+    σ_oe = collect(Float64, oe_std)
+    P_oe_0 = diagm(σ_oe .^ 2)
+    J_oe_to_mee = ForwardDiff.jacobian(_oe_to_mee, oe_vec_0)
+    P_mee_0 = J_oe_to_mee * P_oe_0 * J_oe_to_mee'
+
+    # Step 2: GVE dynamics for MEE
+    # Perturbing accelerations (J2 + drag) are computed in the inertial frame
+    # using existing Cartesian perturbation functions, then rotated to the RSW
+    # frame.  Two-body gravity is captured analytically in the dL/dt term.
+    # ForwardDiff differentiates the entire pipeline in a single level.
+    function gve_mee_dynamics(mee_vec, t)
+        p_el  = mee_vec[1]
+        f_el  = mee_vec[2]
+        g_el  = mee_vec[3]
+        h_el  = mee_vec[4]
+        k_el  = mee_vec[5]
+        L_el  = mee_vec[6]
+
+        cosL = cos(L_el)
+        sinL = sin(L_el)
+        w  = 1 + f_el * cosL + g_el * sinL
+        s2 = 1 + h_el^2 + k_el^2
+        sq = sqrt(p_el / GM)
+
+        T_el = eltype(mee_vec)
+        a_R = zero(T_el)
+        a_S = zero(T_el)
+        a_W = zero(T_el)
+
+        if sim_params.add_perturbations
+            x_vec = _mee_to_cartesian_ad(mee_vec, GM)
+            r_vec = x_vec[1:3]
+            v_vec = x_vec[4:6]
+
+            epoch = sim_params.epoch_0 + t
+            a_pert = cartesian_J2_perturbation(x_vec, t, sim_params) +
+                     cartesian_drag_perturbation(x_vec, t, epoch, sim_params)
+
+            r_norm = sqrt(r_vec[1]^2 + r_vec[2]^2 + r_vec[3]^2)
+            Rh1 = r_vec[1] / r_norm
+            Rh2 = r_vec[2] / r_norm
+            Rh3 = r_vec[3] / r_norm
+
+            hx = r_vec[2] * v_vec[3] - r_vec[3] * v_vec[2]
+            hy = r_vec[3] * v_vec[1] - r_vec[1] * v_vec[3]
+            hz = r_vec[1] * v_vec[2] - r_vec[2] * v_vec[1]
+            h_norm = sqrt(hx^2 + hy^2 + hz^2)
+            Wh1 = hx / h_norm
+            Wh2 = hy / h_norm
+            Wh3 = hz / h_norm
+
+            Sh1 = Wh2 * Rh3 - Wh3 * Rh2
+            Sh2 = Wh3 * Rh1 - Wh1 * Rh3
+            Sh3 = Wh1 * Rh2 - Wh2 * Rh1
+
+            a_R = a_pert[1] * Rh1 + a_pert[2] * Rh2 + a_pert[3] * Rh3
+            a_S = a_pert[1] * Sh1 + a_pert[2] * Sh2 + a_pert[3] * Sh3
+            a_W = a_pert[1] * Wh1 + a_pert[2] * Wh2 + a_pert[3] * Wh3
+        end
+
+        hsinL_kcosL = h_el * sinL - k_el * cosL
+
+        dp_dt = 2 * (p_el / w) * sq * a_S
+        df_dt = sq * (sinL * a_R + ((w + 1) * cosL + f_el) / w * a_S -
+                      g_el * hsinL_kcosL / w * a_W)
+        dg_dt = sq * (-cosL * a_R + ((w + 1) * sinL + g_el) / w * a_S +
+                      f_el * hsinL_kcosL / w * a_W)
+        dh_dt = sq * s2 * cosL / (2 * w) * a_W
+        dk_dt = sq * s2 * sinL / (2 * w) * a_W
+        dL_dt = sqrt(GM * p_el) * (w / p_el)^2 +
+                sq * hsinL_kcosL / w * a_W
+
+        return [dp_dt, df_dt, dg_dt, dh_dt, dk_dt, dL_dt]
+    end
+
+    # Step 3: Augmented ODE [mee(6); vec(Φ)(36)] — 42 states total
+    Φ_0 = Matrix{Float64}(I, 6, 6)
+    augmented_state_0 = [mee_vec_0; vec(Φ_0)]
+
+    function augmented_mee_dynamics!(du, u, p, t)
+        mee_vec = u[1:6]
+        Φ_vec  = u[7:42]
+        Φ = reshape(Φ_vec, 6, 6)
+
+        du[1:6] = gve_mee_dynamics(mee_vec, t)
+
+        A_mee = ForwardDiff.jacobian(m -> gve_mee_dynamics(m, t), mee_vec)
+        du[7:42] = vec(A_mee * Φ)
+    end
+
+    prob = ODEProblem(augmented_mee_dynamics!, augmented_state_0, (times[1], times[end]), sim_params)
+    sol = solve(prob, sim_params.integrator(); abstol=sim_params.abstol, reltol=sim_params.reltol, saveat=times)
+
+    # Step 4: Extract trajectories and map to Cartesian at each output time
+    x_vec_traj = Vector{Vector{Float64}}(undef, length(times))
+    P_traj = Vector{Matrix{Float64}}(undef, length(times))
+
+    for i in 1:length(times)
+        mee_t  = sol.u[i][1:6]
+        Φ_mee  = reshape(sol.u[i][7:42], 6, 6)
+
+        P_mee_t = Φ_mee * P_mee_0 * Φ_mee'
+        P_mee_t = (P_mee_t + P_mee_t') / 2.0
+
+        x_vec_traj[i] = _mee_to_cartesian_ad(mee_t, GM)
+
+        J_mee_to_cart = ForwardDiff.jacobian(m -> _mee_to_cartesian_ad(m, GM), mee_t)
+        P_traj[i] = J_mee_to_cart * P_mee_t * J_mee_to_cart'
+        P_traj[i] = (P_traj[i] + P_traj[i]') / 2.0
+    end
+
+    return x_vec_traj, P_traj
+end
+
 function generate_sigma_points_via_unscented_transform(x_vec, P; α=1e-3, β=2.0, κ=0.0)
     # Compute Unscented Transform parameters
     n = length(x_vec)
