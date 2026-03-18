@@ -336,8 +336,9 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             for (idx, num_bins) in enumerate(num_energy_bins_list)
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing
+                    n_plot = min(N, length(metrics.pos_errors))
                     style = bin_styles[mod1(idx, length(bin_styles))]
-                    plot!(p1, times[1:N] ./ 3600, metrics.pos_errors,
+                    plot!(p1, times[1:n_plot] ./ 3600, metrics.pos_errors[1:n_plot],
                         label="$(num_bins) bins",
                         linewidth=2, color=style.color, linestyle=style.linestyle)
                 end
@@ -348,8 +349,9 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             for (idx, num_bins) in enumerate(num_energy_bins_list)
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing
+                    n_plot = min(N, length(metrics.vel_errors))
                     style = bin_styles[mod1(idx, length(bin_styles))]
-                    plot!(p2, times[1:N] ./ 3600, metrics.vel_errors,
+                    plot!(p2, times[1:n_plot] ./ 3600, metrics.vel_errors[1:n_plot],
                         label="$(num_bins) bins",
                         linewidth=2, color=style.color, linestyle=style.linestyle)
                 end
@@ -360,8 +362,9 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             for (idx, num_bins) in enumerate(num_energy_bins_list)
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing
+                    n_plot = min(N, length(metrics.pos_uncertainty_errors))
                     style = bin_styles[mod1(idx, length(bin_styles))]
-                    plot!(p3, times[1:N] ./ 3600, metrics.pos_uncertainty_errors,
+                    plot!(p3, times[1:n_plot] ./ 3600, metrics.pos_uncertainty_errors[1:n_plot],
                         label="$(num_bins) bins",
                         linewidth=2, color=style.color, linestyle=style.linestyle)
                 end
@@ -372,8 +375,9 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
             for (idx, num_bins) in enumerate(num_energy_bins_list)
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing
+                    n_plot = min(N, length(metrics.vel_uncertainty_errors))
                     style = bin_styles[mod1(idx, length(bin_styles))]
-                    plot!(p4, times[1:N] ./ 3600, metrics.vel_uncertainty_errors,
+                    plot!(p4, times[1:n_plot] ./ 3600, metrics.vel_uncertainty_errors[1:n_plot],
                         label="$(num_bins) bins",
                         linewidth=2, color=style.color, linestyle=style.linestyle)
                 end
@@ -385,11 +389,12 @@ for (orbit_idx, orbit) in enumerate(test_orbits)
                 result = results_by_bins[num_bins]
                 metrics = metrics_by_bins[num_bins]
                 if metrics !== nothing && !result.failed
+                    n_plot = min(N, length(result.x_vec_traj), length(x_vec_traj_mean_mc))
                     kl_vals = [gaussian_kl_divergence("Stratified KS CKF (num_bins=$num_bins)", times[i],
                         x_vec_traj_mean_mc[i], P_traj_mc[i],
-                        result.x_vec_traj[i], result.P_traj[i]) for i in 1:N]
+                        result.x_vec_traj[i], result.P_traj[i]) for i in 1:n_plot]
                     style = bin_styles[mod1(idx, length(bin_styles))]
-                    plot!(p5, times[1:N] ./ 3600, kl_vals,
+                    plot!(p5, times[1:n_plot] ./ 3600, kl_vals,
                         label="$(num_bins) bins",
                         linewidth=2, color=style.color, linestyle=style.linestyle)
                 end

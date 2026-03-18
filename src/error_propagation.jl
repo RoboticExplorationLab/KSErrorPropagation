@@ -1259,15 +1259,19 @@ function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
         vel_errors[i] = norm(x_vec_traj_test[i][4:6] - x_vec_traj_ref[i][4:6])
     end
 
-    # Position metrics
-    pos_rmse = sqrt(sum(pos_errors .^ 2) / N)
-    pos_min = minimum(pos_errors)
-    pos_max = maximum(pos_errors)
+    # Position metrics (use only finite values — failed propagation may produce NaN)
+    pos_finite = pos_errors[isfinite.(pos_errors)]
+    n_pos = length(pos_finite)
+    pos_rmse = n_pos > 0 ? sqrt(sum(pos_finite .^ 2) / n_pos) : NaN
+    pos_min = n_pos > 0 ? minimum(pos_finite) : NaN
+    pos_max = n_pos > 0 ? maximum(pos_finite) : NaN
 
     # Velocity metrics
-    vel_rmse = sqrt(sum(vel_errors .^ 2) / N)
-    vel_min = minimum(vel_errors)
-    vel_max = maximum(vel_errors)
+    vel_finite = vel_errors[isfinite.(vel_errors)]
+    n_vel = length(vel_finite)
+    vel_rmse = n_vel > 0 ? sqrt(sum(vel_finite .^ 2) / n_vel) : NaN
+    vel_min = n_vel > 0 ? minimum(vel_finite) : NaN
+    vel_max = n_vel > 0 ? maximum(vel_finite) : NaN
 
     # Extract standard deviations from covariance matrices
     # Position standard deviations: sqrt(P[i,i]) for i = 1, 2, 3
@@ -1311,17 +1315,21 @@ function error_metrics(x_vec_traj_ref, P_traj_ref, x_vec_traj_test, P_traj_test)
         σ_vel_total_test[i] = sqrt(max(0.0, P_traj_test[i][4, 4] + P_traj_test[i][5, 5] + P_traj_test[i][6, 6]))
     end
 
-    # Compute position uncertainty error trajectory
+    # Compute position uncertainty error trajectory (use only finite values)
     pos_uncertainty_errors = [abs(σ_pos_total_test[i] - σ_pos_total_ref[i]) for i in 1:N]
-    pos_uncertainty_rmse = sqrt(sum(pos_uncertainty_errors .^ 2) / N)
-    pos_uncertainty_min = minimum(pos_uncertainty_errors)
-    pos_uncertainty_max = maximum(pos_uncertainty_errors)
+    pos_unc_finite = pos_uncertainty_errors[isfinite.(pos_uncertainty_errors)]
+    n_pos_unc = length(pos_unc_finite)
+    pos_uncertainty_rmse = n_pos_unc > 0 ? sqrt(sum(pos_unc_finite .^ 2) / n_pos_unc) : NaN
+    pos_uncertainty_min = n_pos_unc > 0 ? minimum(pos_unc_finite) : NaN
+    pos_uncertainty_max = n_pos_unc > 0 ? maximum(pos_unc_finite) : NaN
 
     # Compute velocity uncertainty error trajectory
     vel_uncertainty_errors = [abs(σ_vel_total_test[i] - σ_vel_total_ref[i]) for i in 1:N]
-    vel_uncertainty_rmse = sqrt(sum(vel_uncertainty_errors .^ 2) / N)
-    vel_uncertainty_min = minimum(vel_uncertainty_errors)
-    vel_uncertainty_max = maximum(vel_uncertainty_errors)
+    vel_unc_finite = vel_uncertainty_errors[isfinite.(vel_uncertainty_errors)]
+    n_vel_unc = length(vel_unc_finite)
+    vel_uncertainty_rmse = n_vel_unc > 0 ? sqrt(sum(vel_unc_finite .^ 2) / n_vel_unc) : NaN
+    vel_uncertainty_min = n_vel_unc > 0 ? minimum(vel_unc_finite) : NaN
+    vel_uncertainty_max = n_vel_unc > 0 ? maximum(vel_unc_finite) : NaN
 
     return (
         # Position error trajectory and statistics
