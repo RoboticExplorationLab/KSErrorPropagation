@@ -10,8 +10,6 @@ const SD = SatelliteDynamics
 
 include("../src/cartesian_dynamics.jl")
 include("../src/ks_dynamics.jl")
-include("../src/utils.jl")
-
 # Define simulation parameters
 SIM_PARAMS = (
     # Physical parameters

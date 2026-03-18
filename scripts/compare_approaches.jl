@@ -28,7 +28,6 @@ const SD = SatelliteDynamics
 include(joinpath(@__DIR__, "..", "src", "cartesian_dynamics.jl"))
 include(joinpath(@__DIR__, "..", "src", "ks_dynamics.jl"))
 include(joinpath(@__DIR__, "..", "src", "error_propagation.jl"))
-include(joinpath(@__DIR__, "..", "src", "utils.jl"))
 
 # Load configuration (default or user-specified)
 if length(ARGS) >= 1

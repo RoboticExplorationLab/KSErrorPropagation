@@ -13,7 +13,6 @@ const SD = SatelliteDynamics
 include("../src/cartesian_dynamics.jl")
 include("../src/ks_dynamics.jl")
 include("../src/error_propagation.jl")
-include("../src/utils.jl")
 
 # Load shared configuration
 # Usage: julia script.jl [config.jl] [save]

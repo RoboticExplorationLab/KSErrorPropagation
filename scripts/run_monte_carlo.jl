@@ -40,7 +40,6 @@ const SD = SatelliteDynamics
 
 include(joinpath(@__DIR__, "..", "src", "cartesian_dynamics.jl"))
 include(joinpath(@__DIR__, "..", "src", "error_propagation.jl"))
-include(joinpath(@__DIR__, "..", "src", "utils.jl"))
 
 # Load configuration (default or user-specified, e.g. config/molniya.jl)
 if length(ARGS) >= 1

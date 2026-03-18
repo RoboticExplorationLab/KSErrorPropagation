@@ -12,7 +12,6 @@ const SD = SatelliteDynamics
 include("../src/cartesian_dynamics.jl")
 include("../src/ks_dynamics.jl")
 include("../src/error_propagation.jl")
-include("../src/utils.jl")
 
 # Load configuration (default or user-specified, e.g. config/sanity_check.jl)
 if length(ARGS) >= 1
